@@ -1,0 +1,132 @@
+% ===================== paper_main.tex (Article-style, concept-only) =====================
+\documentclass[10pt]{article}
+
+% --- Page setup ---
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace} % optional
+% \doublespacing % uncomment if needed
+
+% --- Encoding & fonts ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% --- Math / graphics / tikz / tables ---
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows, positioning, calc}
+
+% --- Hyperlinks ---
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+% --- Bibliography (choose one) ---
+% Option A: natbib
+\usepackage[numbers,sort&compress]{natbib}
+% \bibliographystyle{unsrtnat}
+% Option B: biblatex (comment natbib above and use backend=biber)
+% \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
+% \addbibresource{refs.bib}
+
+% --- Title & Authors ---
+\title{Explainable Transformers via Graph-Based Operator Notation\\\large A Beginner-Oriented, Concept-Only Guide}
+\author{Anonymous}
+\date{} % add date if desired
+
+% --- Theorem-like environments (optional) ---
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+
+% --- Unicode fallbacks for safety ---
+\DeclareUnicodeCharacter{2295}{\ensuremath{\oplus}}      % ⊕
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}} % →
+\DeclareUnicodeCharacter{2219}{\ensuremath{\bullet}}     % •
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present a compact, pedagogy-first description of Transformers using a graph-based operator notation. Nodes denote operators, edges denote tensors, and double arrows mark the second operand of matrix multiplications. This article focuses on concepts (no code), pairing each formula with shape reasoning so a newcomer can translate diagrams into implementations after reading.\footnote{A practical, code-first companion is intentionally excluded in this version.}
+\end{abstract}
+
+\paragraph{Keywords} Transformer; attention; backpropagation; LayerNorm; softmax; diagram notation; pedagogy.
+
+% ===================== 1. Introduction =====================
+\section{Introduction}
+Transformers have become the dominant sequence model in modern ML. However, many introductions assume prior exposure to neural networks and autodiff. We provide a beginner-friendly, concept-only path: (i) a minimal diagram legend, (ii) operator primitives with forward/backward summaries, (iii) multi-head attention (MHA) forward/backward, and (iv) assembly of a Transformer block (Input Embedding $\rightarrow$ MHA $\rightarrow$ MLP $\rightarrow$ Output Projection).
+
+\subsection{Contributions}
+(1) A consistent diagrammatic convention that separates operators from data. (2) Shape-first backprop summaries, including broadcasting and reduce axes. (3) A compact Transformer walkthrough suitable for first-time readers.
+
+% ===================== 2. Diagram Legend =====================
+\section{Diagram Legend}
+\textbf{Nodes}: $\bullet$ (MatMul), $\oplus$ (elementwise add), yellow rectangles (nonlinear / non-invertible, e.g., LN, Softmax, Dropout).\\
+\textbf{Edges}: single arrow = dataflow; double arrow = second MatMul operand.\\
+\textbf{Helpers}: R (reshape/split-merge heads), T (transpose), C (concat), DO (dropout), S (scale/softmax), SM (masking).
+
+% ===================== 3. Operator Primitives =====================
+\section{Operator Primitives}
+\subsection{General Backprop Rule for $z=f(x,y)$}
+Let $g = \partial L/\partial z$. Then
+\begin{equation}
+\frac{\partial L}{\partial x} = \texttt{reduce\_like}\big(g\odot \tfrac{\partial f}{\partial x},\; x\big),\quad
+\frac{\partial L}{\partial y} = \texttt{reduce\_like}\big(g\odot \tfrac{\partial f}{\partial y},\; y\big),
+\end{equation}
+where \texttt{reduce\_like} sums over broadcast axes to match the input shape. For MatMul $Z=AB$ with upstream $G$, $\partial L/\partial A=GB^{\top}$ and $\partial L/\partial B=A^{\top}G$.
+
+\subsection{Elementwise Add / Bias Add}
+$Y=A+B$. Gradients reduce along broadcast axes.
+
+\subsection{Linear / Projection}
+$Y= XW + b$. $\partial L/\partial X=(\partial L/\partial Y)W^{\top}$, $\partial L/\partial W=X^{\top}(\partial L/\partial Y)$, $\partial L/\partial b=\sum\limits_{B,S}(\partial L/\partial Y)$.
+
+\subsection{Softmax (Stable)}
+With $Y=\text{softmax}(Z)$ along the last axis, $\partial L/\partial Z=(G-\langle G,Y\rangle)\odot Y$, where $G=\partial L/\partial Y$ and the inner product is along the softmax axis.
+
+\subsection{LayerNorm (LN)}
+Summarize forward $(\mu,\sigma,\hat X)$ and use the standard derivative form with cached statistics.
+
+% ===================== 4. Multi-Head Attention =====================
+\section{Multi-Head Attention (MHA)}
+\subsection{Forward}
+Given $Q,K,V\in\mathbb{R}^{[B,H,S,D_h]}$, scores $A=QK^{\top}/\sqrt{D_h}$, probabilities $P=\text{softmax}(A)$ (with masking), outputs $O=PV$. Heads are merged (concat) and projected. Shapes: $A,P\in\mathbb{R}^{[B,H,S,S]}$, $O\in\mathbb{R}^{[B,S,D]}$.
+
+\subsection{Backward (Summary)}
+$dO\rightarrow dV=P^{\top}dO$, $dO\rightarrow dP=dO\,V^{\top}$, $dP\rightarrow dA=(dP-\text{sum}(dP\odot P))\odot P$, masking zeros gradients on masked entries, and $dA\rightarrow dQ=dA\,K/\sqrt{D_h}$, $dA\rightarrow dK=dA^{\top}Q/\sqrt{D_h}$.
+
+% ===================== 5. Transformer Block =====================
+\section{Transformer Block (Concept-Only)}
+\textbf{Pipeline}: Input Embedding $\rightarrow$ MHA $\rightarrow$ MLP (FFN) $\rightarrow$ Output Projection, with residual connections and LayerNorm.\\
+\textbf{Input Embedding}: token table $E\in\mathbb{R}^{V\times D}$ mapping $[B,S]$ to $[B,S,D]$; positional signal (absolute/learned or RoPE).\\
+\textbf{MLP}: Linear--GELU--Linear (or SwiGLU), expansion factor $\alpha$.\\
+\textbf{Output Projection}: logits via $W_{lm}\in\mathbb{R}^{D\times V}$; optionally tie with $E$.
+
+% ===================== 6. Figures (placeholders) =====================
+\section{Figures}
+% Example figure environment (replace with your TikZ)
+\begin{figure}[h]
+  \centering
+  % \input{figures/mha_forward.tikz} % if externalized
+  \caption{Forward pass of multi-head attention using the proposed legend.}
+  \label{fig:mha-forward}
+\end{figure}
+
+% ===================== 7. Discussion & Limitations =====================
+\section{Discussion and Limitations}
+Scope is conceptual; we omit code, datasets, and training details. Numerical stability notes (softmax, LN) are summarized rather than proven.
+
+% ===================== 8. Conclusion =====================
+\section{Conclusion}
+We provided a concise, beginner-first exposition of Transformers grounded in operator graphs and shape reasoning. The framework is intended to be directly translatable to implementations once readers are ready to code.
+
+% ===================== References =====================
+% natbib example:
+% \bibliography{refs}
+
+% biblatex example:
+% \printbibliography
+
+\end{document}
