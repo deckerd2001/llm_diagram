@@ -1,0 +1,55 @@
+\documentclass[border=10pt]{standalone}
+\usepackage{amsmath}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, decorations.pathreplacing}
+
+\begin{document}
+
+\tikzset{
+    block/.style={rectangle, draw=black, fill=white, text width=5em, text centered, rounded corners, minimum height=8em, font=\bfseries},
+    forward/.style={-{Stealth[length=2mm]}, thick, black},
+    backward/.style={-{Stealth[length=2mm]}, thick, black, densely dashed},
+    io/.style={text centered, font=\bfseries}
+}
+
+\begin{tikzpicture}[node distance=2.5cm]
+
+    % Forward path nodes (horizontal)
+    \node (input) [io] {$\mathbf{X}$};
+    \node (encoding) [block, right of=input, yshift=-3em] {Input\\Encoding};
+    \node (mha) [block, right of=encoding] {MHA};
+    \node (mlp) [block, right of=mha] {FFN};
+    \node (output) [block, right of=mlp] {Output\\Projection};
+    \node (pred) [io, right of=output, yshift=3em] {$\mathbf{Y}$};
+    \node (loss) [align=center, io, right of=output] {\small LOSS:\\$\mathcal{L}(\mathbf{Y,Y_\text{targets}})$};
+    \node (gradient) [io, right of=output, yshift=-3em] {$\mathbf{dY}(=\frac{dL}{dY})$};
+
+    % Forward arrows (upper part of blocks)
+    \draw [forward] (input) -- ([yshift=3em]encoding.west);
+    \draw [forward] ([yshift=3em]encoding.east) -- ([yshift=3em]mha.west);
+    \draw [forward] ([yshift=3em]mha.east) -- ([yshift=3em]mlp.west);
+    \draw [forward] ([yshift=3em]mlp.east) -- ([yshift=3em]output.west);
+    \draw [forward] ([yshift=3em]output.east) -- (pred);
+    \draw [forward] (pred) -- (loss);
+    \draw [backward] (loss) -- (gradient);
+
+    % Backward arrows (lower part of blocks)
+    \draw [backward] (gradient) -- ([yshift=-3em]output.east);
+    \draw [backward] ([yshift=-3em]output.west) -- ([yshift=-3em]mlp.east);
+    \draw [backward] ([yshift=-3em]mlp.west) -- ([yshift=-3em]mha.east);
+    \draw [backward] ([yshift=-3em]mha.west) -- ([yshift=-3em]encoding.east);
+
+    % Brace for layer repetition
+    \draw[decorate, decoration={brace, amplitude=10pt}]
+        ([yshift=3.5em]mha.north west) -- ([yshift=3.5em]mlp.north east)
+        node[midway, above=12pt, font=\normalsize] {$N$ layers};
+
+    % Labels (Legend)
+    \coordinate (legend) at ([xshift=-1.5cm, yshift=6.5em]input);
+    \draw[forward] (legend) -- ++(0.8,0) node[right, font=\normalsize] {Forward};
+    \draw[backward] ([yshift=-0.6cm]legend) -- ++(0.8,0) node[right, font=\normalsize] {Backward};
+
+\end{tikzpicture}
+
+\end{document}

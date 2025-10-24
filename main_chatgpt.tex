@@ -31,6 +31,34 @@
 % \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
 % \addbibresource{refs.bib}
 
+% ===== Inline Icon Styles (match your figure styles exactly) =====
+% 그림과 동일한 색/선/채움 사용
+\tikzset{
+  icon-mul/.style={draw, circle, fill=white, inner sep=0.8pt},
+  icon-add-dashed/.style={draw, circle, dashed, fill=white, inner sep=0.6pt},
+  icon-add-solid/.style={draw, circle, fill=white, inner sep=0.6pt},
+  icon-aux/.style={draw, rectangle, fill=white, inner sep=1.2pt},
+  icon-sum/.style={draw, circle, fill=white, inner sep=0.3pt}
+}
+
+% ===== Inline Icon Commands (use in text) =====
+\newcommand{\iconMatMul}{%
+  \tikz[baseline=-0.6ex]\node[icon-mul]{$\scriptsize\bullet$};%
+}
+\newcommand{\iconAddDashed}{%
+  \tikz[baseline=-0.6ex]\node[icon-add-dashed]{\scriptsize$+$};%
+}
+\newcommand{\iconAddSolid}{%
+  \tikz[baseline=-0.6ex]\node[icon-add-solid]{\scriptsize$+$};%
+}
+\newcommand{\iconAux}[1]{%
+  \tikz[baseline=-0.6ex]\node[icon-aux]{\scriptsize #1};%
+}
+\newcommand{\iconSum}{%
+  \tikz[baseline=-0.6ex]\node[icon-sum]{\tiny$\sum$};%
+}
+
+
 % --- Title & Authors ---
 \title{Explainable Transformers via Graph-Based Operator Notation\\\large A Beginner-Oriented, Concept-Only Guide}
 \author{Anonymous}
@@ -50,22 +78,69 @@
 
 \begin{abstract}
 We present a compact, pedagogy-first description of Transformers using a graph-based operator notation. Nodes denote operators, edges denote tensors, and double arrows mark the second operand of matrix multiplications. This article focuses on concepts (no code), pairing each formula with shape reasoning so a newcomer can translate diagrams into implementations after reading.\footnote{A practical, code-first companion is intentionally excluded in this version.}
+This article is intentionally written for readers without prior neural-network background: it builds intuition first with operator–tensor diagrams, so that by the end one can follow the end-to-end Transformer flow, and later dive into the mathematical and implementation details with confidence.
 \end{abstract}
 
 \paragraph{Keywords} Transformer; attention; backpropagation; LayerNorm; softmax; diagram notation; pedagogy.
 
 % ===================== 1. Introduction =====================
 \section{Introduction}
-Transformers have become the dominant sequence model in modern ML. However, many introductions assume prior exposure to neural networks and autodiff. We provide a beginner-friendly, concept-only path: (i) a minimal diagram legend, (ii) operator primitives with forward/backward summaries, (iii) multi-head attention (MHA) forward/backward, and (iv) assembly of a Transformer block (Input Embedding $\rightarrow$ MHA $\rightarrow$ MLP $\rightarrow$ Output Projection).
+Transformers have become the dominant sequence model in modern ML. However, many introductions assume prior exposure to neural networks and autodiff. We provide a beginner-friendly, concept-only path: (i) a concise section on graph notation and visual conventions, (ii) operator primitives with forward/backward summaries, (iii) multi-head attention (MHA) forward/backward, and (iv) assembly of a Transformer block (Input Embedding $\rightarrow$ MHA $\rightarrow$ MLP $\rightarrow$ Output Projection).
+\paragraph{Learning Path and Promise}
+We start from a visual, shape-first notation (Section~2), fix a small set of operator primitives with forward/backward summaries (Section~3), and then assemble the Transformer block from Input Encoding $\rightarrow$ MHA $\rightarrow$ MLP $\rightarrow$ Output Projection (Sections~4–5).
+By design, a reader who “doesn’t yet know where to start” can still finish with a working mental model of the full Transformer flow, and later return to fill in mathematics, cost models, and implementation details without losing the big picture.
 
 \subsection{Contributions}
 (1) A consistent diagrammatic convention that separates operators from data. (2) Shape-first backprop summaries, including broadcasting and reduce axes. (3) A compact Transformer walkthrough suitable for first-time readers.
 
-% ===================== 2. Diagram Legend =====================
-\section{Diagram Legend}
-\textbf{Nodes}: $\bullet$ (MatMul), $\oplus$ (elementwise add), yellow rectangles (nonlinear / non-invertible, e.g., LN, Softmax, Dropout).\\
-\textbf{Edges}: single arrow = dataflow; double arrow = second MatMul operand.\\
-\textbf{Helpers}: R (reshape/split-merge heads), T (transpose), C (concat), DO (dropout), S (scale/softmax), SM (masking).
+\section{Graph Notation and Visual Conventions}
+\paragraph{How to Read This Section}
+If you feel lost about where to begin, read this section as a map: each icon in the figures has a one-to-one meaning here (node type, edge role, and shape tags).
+Once you can read a single forward figure and a single backward figure fluently, the entire Transformer flow becomes a sequence of these same primitives reused in different places.
+
+We use operator–tensor graphs where nodes are operators and edges carry tensors. The notation is identical in text and figures to avoid ambiguity and testing mismatches.
+
+\subsection{Node Types (exactly as in figures)}
+\begin{itemize}
+  \item \textbf{MatMul} \iconMatMul\ : green circular node with a centered $\bullet$ (matrix multiplication).
+  \item \textbf{Elementwise Add / Bias Add} \iconAddDashed\ : red dashed circle with a centered $+$ (broadcasting allowed).
+  % If you chose solid style instead, swap to \iconAddSolid
+  \item \textbf{Nonlinear / Normalization / Utility} \iconAux{LN}, \iconAux{GL}, \iconAux{DO}, \iconAux{T}, \iconAux{S}, \iconAux{SM}, \iconAux{CE}:
+        yellow rectangle with the operator label (LayerNorm, GELU, Dropout, Transpose, Softmax, Score+Mask, Cross-Entropy).
+  \item \textbf{Reduction} \iconSum\ : small red circle with $\sum$ (axis reductions such as $\sum_{B,S}$ for bias gradients).
+\end{itemize}
+
+\subsection{Edges and the Double-Arrow Convention}
+We draw one diagram per direction. In a forward diagram, all arrows carry forward values; in a backward diagram, all arrows carry gradients. We therefore use one unified arrow style:
+\begin{itemize}
+  \item \textbf{Value flow:} single solid arrow $\to$ for all tensors in the current diagram.
+  \item \textbf{Second MatMul operand:} double arrow $\Rightarrow$ into the MatMul node to mark the right-hand matrix (e.g., weights, possibly transposed).
+  \item \textbf{Reductions:} a \iconSum\ node denotes axis reductions (e.g., $\sum_{B,S}$).
+\end{itemize}
+The double arrow removes ambiguity about which factor is on the right in $Z=XW$, and clarifies where transposes appear in backprop.
+
+\subsection{Tensor Names, Shapes, and Broadcasting}
+Edges are labeled with names and shapes, e.g., $[B,S,D]$, $[B,S,D_{\mathrm{ff}}]$.
+Broadcast notation $\mathrm{BC}_{B,S}(\cdot)$ indicates expansion (e.g., $\mathrm{BC}_{B,S}(\tilde{\mathbf{b}}_{\text{up}}):[D_{\mathrm{ff}}]\to[B,S,D_{\mathrm{ff}}]$).
+
+\subsection{MatMul Orientation and Backprop}
+For $Z=XW$ we mark $W$ with the double arrow. Backprop uses
+\[
+\frac{\partial L}{\partial X}=G\,W^{\top},\qquad
+\frac{\partial L}{\partial W}=X^{\top}G,
+\]
+with $G=\partial L/\partial Z$. In diagrams, needed transposes are shown with \iconAux{T} before the gradient-accumulation MatMul.
+
+\subsection{Bias Add and Reductions}
+For $Y=A+B$ with broadcasting, the gradient w.r.t.\ $B$ reduces across broadcast axes:
+\[
+\frac{\partial L}{\partial B}=\sum_{\text{broadcast axes}} \frac{\partial L}{\partial Y}.
+\]
+We render this with a \iconSum\ node labeled $\sum_{B,S}$ at bias-add sites.
+
+\subsection{(Optional) Cost Badges}
+You may attach small badges: \texttt{FLOPs=} inside MatMul nodes (e.g., $2mkn$) and \texttt{[shape $|$ bytes]} on wide edges, to immediately surface compute/memory hot spots.
+
 
 % ===================== 3. Operator Primitives =====================
 \section{Operator Primitives}
@@ -120,7 +195,8 @@ Scope is conceptual; we omit code, datasets, and training details. Numerical sta
 
 % ===================== 8. Conclusion =====================
 \section{Conclusion}
-We provided a concise, beginner-first exposition of Transformers grounded in operator graphs and shape reasoning. The framework is intended to be directly translatable to implementations once readers are ready to code.
+We deliberately prioritized a diagram-first, beginner-friendly path so that readers without a neural-network background can still form a correct end-to-end mental model of Transformers.
+From here, the same operator–tensor vocabulary extends naturally to stability tricks (e.g., log-sum-exp, pre-LN), cost models (FLOPs/bytes per edge), training regimes, and implementation details (fused kernels, KV caching), without losing the overall flow.
 
 % ===================== References =====================
 % natbib example:
