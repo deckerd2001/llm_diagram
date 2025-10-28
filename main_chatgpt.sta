@@ -1,0 +1,5 @@
+\standalonepreambles
+\subpreamble{figs/transformer_overall_flow.tex}
+\usepackage {amsmath}\usepackage {tikz}\usetikzlibrary {shapes.geometric, arrows.meta, positioning, calc, decorations.pathreplacing}
+\endsubpreamble
+\endstandalonepreambles
