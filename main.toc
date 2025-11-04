@@ -24,3 +24,7 @@
 \contentsline {subsection}{\numberline {2.6}Communication Patterns}{22}{}%
 \contentsline {section}{\numberline {3}Data Parallelism (DP)}{24}{}%
 \contentsline {subsection}{\numberline {3.1}DP Overview}{24}{}%
+\contentsline {subsection}{\numberline {3.2}MHA Forward Pass}{25}{}%
+\contentsline {subsection}{\numberline {3.3}MHA Backward Pass}{25}{}%
+\contentsline {subsection}{\numberline {3.4}MLP Forward Pass}{26}{}%
+\contentsline {subsection}{\numberline {3.5}Mlp Backward Pass}{26}{}%

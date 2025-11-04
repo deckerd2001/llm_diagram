@@ -6,15 +6,14 @@
     mulnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
     addnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
     sumnode/.style={draw, circle, fill=white, minimum size=6mm, font=\tiny, align=center},
-    allreduce/.style={draw, rectangle, fill=red!30, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center, thick, draw=red!70},
     flow_rev/.style={<-, thick, black!85},
     flow_dw/.style={->, thick, black!85},
     flow_act/.style={double, ->, thick, black!85},
-    commflow/.style={<->, thick, red!70, dashed},
     dimlabel/.style={font=\tiny, inner sep=1pt, align=center},
-    gradlabel/.style={font=\tiny\bfseries, inner sep=1pt, align=center}
+    gradlabel/.style={font=\tiny\bfseries, inner sep=1pt, align=center},
+    dpgradweight/.style={->, thick, red!70}
 ]
-    \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass (Node $i$)};
+    \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass (Data Parallel)};
 
     \pgfmathsetmacro{\backwardoffset}{0.0}
 
@@ -27,59 +26,61 @@
     \coordinate (branch_dUproj) at ($(split2) + (-1.2cm, 0)$);
 
     \node[sumnode] (d_SumB2) [above=0.8cm of split2] {$\sum_{B, S}$};
-    \node (d_Bdown) [above=0.8cm of d_SumB2] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{down}}$};
-    \draw[flow_dw] (d_SumB2) -- (d_Bdown) node[dimlabel, midway, right]{$[D]$};
+    \node[color=red!70] (d_Bdown) [above=0.8cm of d_SumB2] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{down}}$};
+    \draw[dpgradweight] (d_SumB2) -- (d_Bdown) node[dimlabel, midway, right]{$[D]$};
 
     \draw[flow_rev] (d_SumB2) -- (split2);
 
     \node[mulnode] (d_L2Mul_in) [left=2.2cm of split2] {$\bullet$};
     \draw[flow_rev] (d_L2Mul_in) -- (d_Drop2)
-      node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{down}}$\\$=\mathrm{d}\mathbf{A}_{\text{out}}$\\$[B,S,D]$}};
+      node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{down}}=\mathrm{d}\mathbf{A}_{\text{out}}$\\$[B,S,D]$}};
 
-    \node[dimlabel] (W_down_T) [align=center, below=2.0cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{(i)T}$\\$[D, D_{ff}/N_T]$\\(row-split)};
-    \draw[flow_act] (W_down_T.north) -- (d_L2Mul_in);
+    \node (W_down_T) [below=1.0cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{T}$};
+    \draw[flow_act] (W_down_T.north) -- (d_L2Mul_in)
+      node[dimlabel, midway, right]{$[D, D_{ff}]$};
 
     \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 3.5cm)$);
     \node[mulnode] (d_L2Mul_w) at (L2Mul_w_y) {$\bullet$};
-    \node (d_Wdown) [align=center, above=0.9cm of d_L2Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{down}}^{(i)}$\\$[D_{ff}/N_T, D]$};
-    \draw[flow_dw] (d_L2Mul_w) -- (d_Wdown);
+    \node (d_Wdown) [above=0.8cm of d_L2Mul_w, color=red!70] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{down}}$};
+    \draw[dpgradweight] (d_L2Mul_w) -- (d_Wdown) node[dimlabel, midway, right]{$[D_{ff}, D]$};
 
     \draw[flow_act] (branch_dUproj.north) |- (d_L2Mul_w.east);
 
     \node[auxnode] (Uin_T) at ($(d_L2Mul_w.west) + (-1.5cm, 0)$) {T};
     \draw[flow_dw] (Uin_T) -- (d_L2Mul_w)
-      node[dimlabel, midway, below]{\shortstack{$\mathbf{U}_{\text{in},i}^T$\\$[B, D_{ff}/N_T, S]$}};
-    \node (Uin_aux) [left=1.8cm of Uin_T] {$\mathbf{U}_{\text{in},i}$};
-    \draw[flow_dw] (Uin_aux) -- (Uin_T) node[dimlabel, midway, above]{\shortstack{$[B,S,$$D_{ff}/N_T]$}};
+      node[dimlabel, midway, below]{\shortstack{$\mathbf{U}_{\text{in}}^T$\\$[B, D_{ff}, S]$}};
+    \node (Uin_aux) [left=1.8cm of Uin_T] {$\mathbf{U}_{\text{in}}$};
+    \draw[flow_dw] (Uin_aux) -- (Uin_T) node[dimlabel, midway, above]{\shortstack{$[B,S,D_{ff}]$}};
 
     \node[auxnode] (d_Drop1) [left=1.8cm of d_L2Mul_in] {dDO};
     \draw[flow_rev] (d_Drop1) -- (d_L2Mul_in)
-      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{U}_{\text{in},i}$\\$[B,S,$$D_{ff}/N_T]$}};
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{U}_{\text{in}}$\\$[B,S,D_{ff}]$}};
 
     \node[auxnode] (d_Act) [left=1.8cm of d_Drop1] {dGL};
     \draw[flow_rev] (d_Act) -- (d_Drop1)
-      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{H}_{\text{inter},i}$\\$[B,S,$$D_{ff}/N_T]$}};
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{H}_{\text{inter}}$\\$[B,S,D_{ff}]$}};
 
     \coordinate (split1) at ($(d_Act.west) + (-1.5cm, 0)$);
     \coordinate (branch_dHpre) at ($(split1) + (-1.2cm, 0)$);
 
     \node[sumnode] (d_SumB1) [above=0.8cm of split1] {$\sum_{B, S}$};
-    \node[dimlabel] (d_Bup) [above=0.9cm of d_SumB1] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{up}}^{(i)}$\\$[D_{ff}/N_T]$};
-    \draw[flow_dw] (d_SumB1) -- (d_Bup);
+    \node[color=red!70] (d_Bup) [above=0.8cm of d_SumB1] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{up}}$};
+    \draw[dpgradweight] (d_SumB1) -- (d_Bup) node[dimlabel, midway, right]{$[D_{ff}]$};
 
     \draw[flow_rev] (d_SumB1) -- (split1);
 
     \node[mulnode] (d_L1Mul_in) [left=2.2cm of split1] {$\bullet$};
     \draw[flow_rev] (d_L1Mul_in) -- (d_Act)
-      node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{up},i}$\\$=\mathrm{d}\mathbf{A}_{\text{up},i}$\\$[B,S,D_{ff}/N_T]$}};
+      node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{up}}=\mathrm{d}\mathbf{A}_{\text{up}}$\\$[B,S,D_{ff}]$}};
 
-    \node[dimlabel] (W_up_T) [align=center, below=1.0cm of d_L1Mul_in] {$\tilde{\mathbf{W}}_{\text{up}}^{(i)T}$\\$[D_{ff}/N_T, D]$\\(col-split)};
-    \draw[flow_act] (W_up_T.north) -- (d_L1Mul_in);
+    \node (W_up_T) [below=1.0cm of d_L1Mul_in] {$\tilde{\mathbf{W}}_{\text{up}}^{T}$};
+    \draw[flow_act] (W_up_T.north) -- (d_L1Mul_in)
+      node[dimlabel, midway, right]{$[D_{ff}, D]$};
 
     \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 3.5cm)$);
     \node[mulnode] (d_L1Mul_w) at (L1Mul_w_y) {$\bullet$};
-    \node (d_Wup) [align=center, above=0.9cm of d_L1Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{up}}^{(i)}$\\$[D, D_{ff}/N_T]$};
-    \draw[flow_dw] (d_L1Mul_w) -- (d_Wup);
+    \node (d_Wup) [above=0.8cm of d_L1Mul_w, color=red!70] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{up}}$};
+    \draw[dpgradweight] (d_L1Mul_w) -- (d_Wup) node[dimlabel, midway, right]{$[D, D_{ff}]$};
 
     \draw[flow_act] (branch_dHpre.north) |- (d_L1Mul_w.east);
 
@@ -89,32 +90,22 @@
     \node (Znorm_aux) [left=1.8cm of Znorm_T] {$\mathbf{H}$};
     \draw[flow_dw] (Znorm_aux) -- (Znorm_T) node[dimlabel, midway, above]{\shortstack{$[B,S,D]$}};
 
-    \node[allreduce] (AR) [left=1.8cm of d_L1Mul_in] {AR};
-    \node[
-      align=center,
-      below=2.0cm of AR,
-      text width=5.2cm
-    ] (AR_info) {%
-      \textbf{All Reduce Comm.}:\\[2pt]
-      \begin{itemize}
-        \item \textbf{Naive:} $2(N_T-1) \times [B,S,D]$
-        \item \textbf{Ring:} $2\frac{N_T-1}{N_T} \times [B,S,D]$
-      \end{itemize}
-    };
-
-    % All-Reduce communication arrows
-    \draw[commflow] (AR.north) -- ++(0, 1.8) node[midway, right, font=\tiny]{Node $j$};
-    \draw[commflow] (AR.south) -- ++(0, -2.1) node[midway, right, font=\tiny]{Node $k$};
-
-    \draw[flow_rev] (AR) -- (d_L1Mul_in)
-      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{H}_i$\\$[B,S,D]$}};
-
-    \node[auxnode] (d_LN2) [left=1.8cm of AR] {dLN};
-    \draw[flow_rev] (d_LN2) -- (AR)
+    \node[auxnode] (d_LN2) [left=1.8cm of d_L1Mul_in] {dLN};
+    \draw[flow_rev] (d_LN2) -- (d_L1Mul_in)
       node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{H}$\\$[B,S,D]$}};
 
     \node (d_MIn) [left=1.8cm of d_LN2] {$\mathrm{d}\mathbf{X}$};
     \draw[flow_rev] (d_MIn) -- (d_LN2)
       node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{X}$\\$[B,S,D]$}};
+
+    % Legend and explanation
+    \node[align=left, font=\scriptsize, text width=8cm] at (-2, -3.5) {
+      \textcolor{red!70}{\textbf{Red gradients}} require \textbf{All-Reduce} before optimizer step\\[4pt]
+      \textbf{MLP All-Reduce Cost:} $\sim 2DD_{ff}$ parameters (W$_{\text{up}}$, W$_{\text{down}}$)\\
+      \quad • \textbf{Naive:} $2(N_{DP}-1) \times 2DD_{ff}$ per node\\
+      \quad • \textbf{Ring:} $2\frac{N_{DP}-1}{N_{DP}} \times 2DD_{ff}$ per node\\[2pt]
+      {\scriptsize (Gradients averaged across $N_{DP}$ data parallel nodes)}
+    };
+
 \end{tikzpicture}%
 }

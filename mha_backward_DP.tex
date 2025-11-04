@@ -1,0 +1,244 @@
+\par\vspace{1cm}
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={transform shape},
+  >=stealth,
+  auxnode/.style={draw, rectangle, fill=white, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center},
+  mulnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  addnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  sumnode/.style={draw, circle, fill=white, minimum size=6mm, font=\tiny, align=center},
+  flow/.style={->, thick, black!85},
+  flow2/.style={->, double, thick, black!85},
+  dimlabel/.style={font=\scriptsize, inner sep=1pt, align=center},
+  gradflow/.style={->, thick, black!85},
+  gradweight/.style={->, thick, black!85},
+  dpgradweight/.style={->, thick, red!70}
+]
+
+\begin{scope}[xscale=1.35, yscale=1.2]
+
+\def\yoffset{-1.0}
+\def\dVXyoffset{-6.5}
+
+\coordinate (Grad_Aout_B) at (17.5, \yoffset);
+\coordinate (dDrop_center) at (15.9, \yoffset);
+\coordinate (ProjGradSplit) at (14.3, \yoffset);
+\coordinate (dOProj_center) at (12.7, \yoffset);
+\coordinate (C_center) at (11.1, \yoffset);
+\coordinate (R_center) at (9.0, \yoffset);
+\coordinate (dPV_AS_calc_center) at (7.5, \yoffset);
+\coordinate (dSoft_center) at (5.3, \yoffset);
+\coordinate (dSM_calc_center) at (3.3, \yoffset);
+\coordinate (dV_calc_center) at (8.2, \dVXyoffset+\yoffset);
+\coordinate (R_V_bwd_center) at (5.9, \dVXyoffset+\yoffset);
+\coordinate (dVX_calc_center) at (3.9, \dVXyoffset+\yoffset);
+\coordinate (dQK_calc_Q_center) at (1.7, \yoffset);
+\coordinate (dQK_calc_K_center) at (1.7, -2.0+\yoffset);
+\coordinate (K_BWD_input_center) at (1.7, 1.0+\yoffset);
+\coordinate (T_Q_bwd_center) at (1.7, -3.0+\yoffset);
+
+\node[font=\Large\bfseries] at (8, 4.6+\yoffset) {Multi-Head Attention Backward Pass (Data Parallel)};
+
+\node (Grad_Aout_B) at (18.5, \yoffset) {$\mathbf{dA}_{\text{out}}$\\$[B,S,D]$};
+\node[auxnode] (DO) at (dDrop_center) {DO};
+\node[mulnode] (dOProj) at (dOProj_center) {$\bullet$};
+
+\node[auxnode] (T_WO) [below=0.9cm of dOProj] {T};
+\node[dimlabel] (WO_BWD) [below=0.45cm of T_WO] {$\widetilde{\mathbf{W}}_{O}$\\$[D,D]$};
+
+\node[mulnode] (dWO_calc) at ($(ProjGradSplit)+(0, 1.6)$) {$\bullet$};
+\node[align=center, left=1.0cm of dWO_calc, color=red!70]
+  (dWO_GRAD) {$\mathbf{d}\widetilde{\mathbf{W}}_{O}$\\$[D,D]$};
+\node[auxnode] (T_AO_in) [right=1.4cm of dWO_calc] {T};
+\node[dimlabel] (AO_in_local_label) [right=1.6cm of T_AO_in] {$\mathbf{AO}_{\text{cat}}$\\$[B,S,D]$};
+
+\node[auxnode] (C) at (C_center) {dC};
+\node[auxnode] (R) at (R_center) {R};
+
+\node[mulnode] (dPV_AS_calc) at (dPV_AS_calc_center) {$\bullet$};
+\node[auxnode] (dSoft) at (dSoft_center) {dS};
+\node[auxnode] (dSM_calc) at (dSM_calc_center) {dSM};
+
+\node[mulnode] (dQK_calc_Q) at (dQK_calc_Q_center) {$\bullet$};
+\node[mulnode] (dQX_proj_calc) [left=5.8cm of dQK_calc_Q] {$\bullet$};
+
+\node[mulnode] (dQK_calc_K) at (dQK_calc_K_center) {$\bullet$};
+\node[mulnode] (dKX_proj_calc) [left=5.8cm of dQK_calc_K] {$\bullet$};
+
+\node[dimlabel] (K_BWD_input) at (K_BWD_input_center) {$\mathbf{K}$\\$[B,N_H,S,D_h]$};
+\node[auxnode] (T_Q_bwd) at (T_Q_bwd_center) {T};
+\node[dimlabel] (Q_BWD_input) [below=0.35cm of T_Q_bwd] {$\mathbf{Q}$\\$[B,N_H,S,D_h]$};
+
+\node[dimlabel] (V_FWD) [above=1.7cm of dPV_AS_calc] {$\mathbf{V}$\\$[B,N_H,S,D_h]$};
+\node[auxnode] (T_V_bwd) [below=0.25cm of V_FWD] {T};
+
+\node[mulnode] (dV_calc) at (dV_calc_center) {$\bullet$};
+\node[auxnode] (T_AS_bwd) [right=1.5cm of dV_calc] {T};
+\node[dimlabel] (AS_BWD_for_V) [right=0.5cm of T_AS_bwd] {$\mathbf{AS}$\\$[B,N_H,S,S]$};
+
+\node[auxnode] (R_V_bwd) at (R_V_bwd_center) {R};
+\node[mulnode] (dVX_calc) at (dVX_calc_center) {$\bullet$};
+
+\node[auxnode] (T_WV) [above=0.35cm of dVX_calc] {T};
+\node[dimlabel] (WV_BWD) [above=0.3cm of T_WV] {$\widetilde{\mathbf{W}}_{V}$\\$[D,D]$};
+
+\node[sumnode] (Sum_dBO) [below=1.5cm of ProjGradSplit] {$\sum_{B, S}$};
+\node[align=center, color=red!70] (dBO) [below=0.7cm of Sum_dBO] {$\mathbf{d}\widetilde{\mathbf{b}}_{O}$\\$[D]$};
+
+\draw[gradflow] (Grad_Aout_B) -- (DO)
+  node[dimlabel, midway, above]{$\mathbf{dA}_{\text{out}}$\\$[B,S,D]$};
+
+\draw[gradflow] (DO) -- (dOProj)
+  node[dimlabel, pos=0.25, above]{$\mathbf{dAO}_{\text{bias}}$\\$=\mathbf{dAO}_{\text{lin}}$\\$[B,S,D]$};
+
+\draw[gradflow] (ProjGradSplit) -- (dWO_calc.south);
+\draw[gradflow] (ProjGradSplit) -- ([yshift=-0.75cm]ProjGradSplit) -| (Sum_dBO.north);
+
+\draw[gradflow] (dOProj) -- (C)
+  node[dimlabel, midway, above]{$\mathbf{dAO}_{\text{cat}}$\\$[B,S,D]$};
+\draw[gradflow] (C) -- (R)
+  node[dimlabel, midway, above]{$[B,S,N_H,D_h]$};
+
+\coordinate (R_split_point) at ($(dPV_AS_calc)!0.5!(R)$);
+\draw[gradflow] (R.west) -- (dPV_AS_calc.east);
+\draw[flow2] (R_split_point) -- (dV_calc.north)
+  node[dimlabel, midway, right]{$\mathbf{dAO}_{\text{heads}}$\\$[B,N_H,S,D_h]$};
+
+\draw[gradflow] (V_FWD.south) -- (T_V_bwd.north);
+\draw[flow2] (T_V_bwd.south) -- (dPV_AS_calc.north)
+  node[dimlabel, midway, right]{$[B,N_H,D_h,S]$};
+\draw[gradflow] (dPV_AS_calc.west) -- (dSoft.east)
+  node[dimlabel, midway, above]{$\mathbf{dAS}$\\$[B,N_H,S,S]$};
+
+\node (AS_BWD_dS) [dimlabel, above=0.5cm of dSoft] {$\mathbf{AS}$\\$[B,N_H,S,S]$};
+\draw[gradflow] (AS_BWD_dS.south) -- (dSoft.north);
+\draw[gradflow] (dSoft.west) -- (dSM_calc.east)
+  node[dimlabel, midway, above]{$[B,N_H,S,S]$};
+
+\coordinate (dA_Split_X) at ($(dSM_calc_center)!0.5!(dQK_calc_Q_center)$);
+\coordinate (dA_Split) at (dA_Split_X |- dQK_calc_Q.east);
+\draw[gradflow] (dSM_calc.west) -- (dQK_calc_Q.east);
+\draw[flow2] (dA_Split) -- (dA_Split |- dQK_calc_K.east) -- (dQK_calc_K.east)
+  node[dimlabel, pos=-1.5, above, yshift=15]{$\mathbf{dA}$\\$[B,N_H,S,S]$};
+
+\draw[flow2] (K_BWD_input.south) -- (dQK_calc_Q.north);
+\draw[gradweight] (dQK_calc_Q) -- (dQX_proj_calc)
+  node[dimlabel, midway, below]{$\mathbf{dQ}$\\$[B,N_H,S,D_h]$};
+
+\node[auxnode] (T_WQ_bwd) [above=0.45cm of dQX_proj_calc] {T};
+\node[dimlabel] (WQ_bwd) [above=0.45cm of T_WQ_bwd] {$\widetilde{\mathbf{W}}_{Q}$\\$[D,D]$};
+\draw[flow] (WQ_bwd) -- (T_WQ_bwd);
+\draw[flow2] (T_WQ_bwd.south) -- (dQX_proj_calc.north)
+  node[dimlabel, midway, right]{$[D,D]$};
+
+\draw[flow] (Q_BWD_input.north) -- (T_Q_bwd.south);
+\draw[flow] (T_Q_bwd.north) -- (dQK_calc_K.south)
+  node[dimlabel, pos=0.55, right]{$[B,N_H,D_h,S]$};
+
+\node[auxnode] (T_dK) at ($(dQK_calc_K)!0.35!(dKX_proj_calc)$) {T};
+\node[auxnode] (R_dK_mid) at ($(T_dK)!0.5!(dKX_proj_calc)$) {R};
+
+\draw[gradweight] (dQK_calc_K) -- (T_dK)
+  node[dimlabel, midway, above]{$\mathbf{dK^T}$\\$[B,N_H,D_h,S]$};
+\draw[gradweight] (T_dK) -- (R_dK_mid)
+  node[dimlabel, midway, above]{$[B,S,N_H,D_h]$};
+\draw[gradweight] (R_dK_mid) -- (dKX_proj_calc)
+  node[dimlabel, midway, above]{$\mathbf{dK}$\\$[B,S,D]$};
+
+\node[auxnode] (T_WK_bwd) [below=0.45cm of dKX_proj_calc] {T};
+\node[dimlabel] (WK_bwd) [below=0.45cm of T_WK_bwd] {$\widetilde{\mathbf{W}}_{K}$\\$[D,D]$};
+\draw[gradflow] (WK_bwd) -- (T_WK_bwd);
+\draw[flow2] (T_WK_bwd.north) -- (dKX_proj_calc.south)
+  node[dimlabel, midway, left]{$[D,D]$};
+
+\draw[gradflow] (AS_BWD_for_V.west) -- (T_AS_bwd.east);
+\draw[gradflow] (T_AS_bwd.west) -- (dV_calc.east)
+  node[dimlabel, midway, above]{$[B,N_H,S,S]$};
+\draw[gradflow] (dV_calc.west) -- (R_V_bwd.east)
+  node[dimlabel, midway, above]{$\mathbf{dV}$\\$[B,N_H,S,D_h]$};
+\draw[gradflow] (R_V_bwd) -- (dVX_calc.east)
+  node[dimlabel, midway, above]{$[B,S,D]$};
+
+\draw[gradflow] (WV_BWD) -- (T_WV);
+\draw[flow2] (T_WV) -- (dVX_calc.north)
+  node[dimlabel, midway, right]{$[D,D]$};
+
+\node[addnode] (Sum_dXnorm) [left=1.8cm of dKX_proj_calc] {$+$};
+
+\draw[gradweight] (dQX_proj_calc.west) -| node[dimlabel, pos=0.7, left]{$\mathbf{dX}_{\text{norm},\mathbf{Q}}$\\$[B,S,D]$} (Sum_dXnorm.north);
+\draw[gradweight] (dKX_proj_calc.west) -- node[dimlabel, midway, above]{$\mathbf{dX}_{\text{norm},\mathbf{K}}$\\$[B,S,D]$} (Sum_dXnorm.east);
+\draw[gradweight] (dVX_calc.west) -| node[dimlabel, pos=0.9, left]{$\mathbf{dX}_{\text{norm},\mathbf{V}}$\\$[B,S,D]$} (Sum_dXnorm.south);
+
+\coordinate (dV_branch) at ($(R_V_bwd.west)!0.52!(dVX_calc.east)$);
+\node[mulnode] (dWV_mul) at ($(dV_branch)+(0,-1.6cm)$) {$\bullet$};
+\draw[flow2] (dV_branch) -- (dWV_mul.north);
+
+\node[auxnode] (T_Xnorm) [right=1.1cm of dWV_mul] {T};
+\node[dimlabel] (Xnorm_local) [right=0.8cm of T_Xnorm] {$\mathbf{X}_{\text{norm}}$\\$[B,S,D]$};
+\draw[gradflow] (Xnorm_local) -- (T_Xnorm);
+\draw[gradflow] (T_Xnorm.west) -- (dWV_mul.east)
+  node[dimlabel, midway, above]{$[B,D,S]$};
+\node[align=center, color=red!70] (dWV_out) [left=1.0cm of dWV_mul] {$\mathbf{d}\widetilde{\mathbf{W}}_{V}$\\$[D,D]$};
+\draw[dpgradweight] (dWV_mul.west) -- (dWV_out);
+
+\coordinate (dQ_branch) at ($(dQK_calc_Q.east)!0.50!(dQX_proj_calc.west)$);
+\node[mulnode] (dWQ_mul) at ($(dQ_branch)+(0,3.0cm)$) {$\bullet$};
+\node[auxnode] (R_dQ_for_WQ) at ($(dWQ_mul)+(0,-1.0cm)$) {R};
+\draw[gradflow]  (dQ_branch) -- (R_dQ_for_WQ.south);
+\draw[flow2] (R_dQ_for_WQ.north) -- (dWQ_mul.south)
+  node[dimlabel, midway, right]{$[B,S,D]$};
+
+\node[auxnode] (T_XnormQ) [right=1.1cm of dWQ_mul] {T};
+\node[dimlabel] (Xnorm_localQ) [right=0.5cm of T_XnormQ] {$\mathbf{X}_{\text{norm}}$\\$[B,S,D]$};
+\draw[gradflow] (Xnorm_localQ) -- (T_XnormQ);
+\draw[gradflow] (T_XnormQ.west) -- (dWQ_mul.east)
+  node[dimlabel, midway, above]{$[B,D,S]$};
+\node[align=center, color=red!70] (dWQ_out) [left=1.0cm of dWQ_mul] {$\mathbf{d}\widetilde{\mathbf{W}}_{Q}$\\$[D,D]$};
+\draw[dpgradweight] (dWQ_mul.west) -- (dWQ_out);
+
+\coordinate (dK_branch) at ($(R_dK_mid)!0.52!(dKX_proj_calc)$);
+\node[mulnode] (dWK_mul) at ($(dK_branch)+(0,-3.0cm)$) {$\bullet$};
+\draw[flow2]  (dK_branch) -- (dWK_mul.north);
+
+\node[auxnode] (T_XnormK) [right=1.2cm of dWK_mul] {T};
+\node[dimlabel, right=0.5cm of T_XnormK] (Xnorm_localK) {$\mathbf{X}_{\text{norm}}$\\$[B,S,D]$};
+\draw[gradflow] (Xnorm_localK) -- (T_XnormK);
+\draw[gradflow] (T_XnormK.west) -- (dWK_mul.east)
+  node[dimlabel, midway, above]{$[B,D,S]$};
+\node[align=center, color=red!70] (dWK_out) [left=1.0cm of dWK_mul] {$\mathbf{d}\widetilde{\mathbf{W}}_{K}$\\$[D,D]$};
+\draw[dpgradweight] (dWK_mul.west) -- (dWK_out);
+
+\draw[dpgradweight] (Sum_dBO) -- (dBO);
+
+\draw[gradflow] (WO_BWD) -- (T_WO);
+\draw[flow2] (T_WO) -- (dOProj)
+  node[dimlabel, midway, right]{$\widetilde{\mathbf{W}}_{O}^{T}$\\$[D,D]$};
+\draw[gradflow] (AO_in_local_label) -- (T_AO_in);
+\draw[flow2] (T_AO_in) -- (dWO_calc.east)
+  node[dimlabel, midway, above]{$[B,D,S]$};
+\draw[dpgradweight] (dWO_calc) -- (dWO_GRAD);
+
+\node[auxnode] (dLN) [left=1.7cm of Sum_dXnorm] {dLN};
+\draw[gradweight] (Sum_dXnorm.west) -- node[dimlabel, midway, above]
+  {$\mathbf{dX}_{\text{norm}}$\\$[B,S,D]$} (dLN.east);
+
+\node (dX_OUT) [align=center, left=1.0cm of dLN] {$\mathbf{dX}$\\$[B,S,D]$};
+\draw[gradweight] (dLN.west) -- (dX_OUT);
+
+\node[dimlabel] (LNCache) [below=0.9cm of dLN] {$\mathbf{X}$\\$[B,S,D]$};
+\draw[gradflow] (LNCache.north) -- (dLN.south);
+
+% Legend and explanation
+    \node[align=left, font=\scriptsize, text width=8cm] at (-5, -9.5) {
+      \textcolor{red!70}{\textbf{Red gradients}} require \textbf{All-Reduce} before optimizer step\\
+      (averaged across all Data Parallel nodes)\\[6pt]
+      \textbf{All-Reduce Communication Cost per MHA layer:}\\
+      \quad • Total parameters: $4D^2 + D$ (W$_Q$, W$_K$, W$_V$, W$_O$, b$_O$)\\
+      \quad • \textbf{Naive:} $2(N_{DP}-1) \times (4D^2 + D)$ per node\\
+      \quad • \textbf{Ring:} $2\frac{N_{DP}-1}{N_{DP}} \times (4D^2 + D)$ per node
+    };
+
+\end{scope}
+\end{tikzpicture}
+}
