@@ -1,19 +1,15 @@
-\documentclass[border=10pt]{standalone}
-\usepackage{amsmath}
-
-\usepackage{tikz}
-\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, decorations.pathreplacing}
-
-\begin{document}
-
-\tikzset{
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    node distance=2.5cm,
+    >=stealth,
     block/.style={rectangle, draw=black, fill=white, text width=5em, text centered, rounded corners, minimum height=8em, font=\bfseries},
     forward/.style={-{Stealth[length=2mm]}, thick, black},
     backward/.style={-{Stealth[length=2mm]}, thick, black, densely dashed},
     io/.style={text centered, font=\bfseries}
-}
-
-\begin{tikzpicture}[node distance=2.5cm]
+]
+    % Title
+    \node[font=\Large\bfseries] at (10, 6) {Transformer Overall Flow};
 
     % Forward path nodes (horizontal)
     \node (input) [io] {$\mathbf{X}$};
@@ -50,6 +46,5 @@
     \draw[forward] (legend) -- ++(0.8,0) node[right, font=\normalsize] {Forward};
     \draw[backward] ([yshift=-0.6cm]legend) -- ++(0.8,0) node[right, font=\normalsize] {Backward};
 
-\end{tikzpicture}
-
-\end{document}
+\end{tikzpicture}%
+}

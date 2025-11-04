@@ -1,0 +1,79 @@
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={transform shape},
+  >=stealth,
+  auxnode/.style={draw, rectangle, fill=white, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center},
+  mulnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  addnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  flow/.style={->, thick, black!85},
+  flow2/.style={->, double, thick, black!85},
+  dimlabel/.style={font=\scriptsize, inner sep=1pt, align=center}
+]
+\node[font=\Large\bfseries] at (8, 4.5) {Multi-Head Attention Forward Pass};
+
+\node (Input) at (0.5, 0) [align=center] {$\mathbf{X}$\\$[B,S,D]$};
+\node[auxnode] (LN) [right=1.6cm of Input] {LN};
+
+\node[mulnode] (Proj_Q) [right=2.0cm of LN, yshift=3.0cm] {$\bullet$};
+\node[auxnode] (R_Q) [right=1.5cm of Proj_Q] {R};
+
+\node[mulnode] (Proj_K) [right=2.0cm of LN, yshift=0cm] {$\bullet$};
+\node[auxnode] (R_K) [right=1.5cm of Proj_K] {R};
+
+\node[mulnode] (Proj_V) [right=2.0cm of LN, yshift=-3.0cm] {$\bullet$};
+\node[auxnode] (R_V) [right=1.5cm of Proj_V] {R};
+
+\node[dimlabel] (WQ) [align=center, below=0.7cm of Proj_Q] {$\widetilde{\mathbf{W}}_{Q}$\\$[D,D]$};
+\node[dimlabel] (WK) [align=center, below=0.7cm of Proj_K] {$\widetilde{\mathbf{W}}_{K}$\\$[D,D]$};
+\node[dimlabel] (WV) [align=center, below=0.7cm of Proj_V] {$\widetilde{\mathbf{W}}_{V}$\\$[D,D]$};
+
+\node[auxnode] (T_K) [right=1.6cm of R_K] {T};
+\node[mulnode] (QK) [right=2.7cm of R_Q, yshift=-1.5cm] {$\bullet$};
+\node[auxnode] (SM) [right=1.6cm of QK] {SM};
+\node[auxnode] (Soft) [right=1.6cm of SM] {S};
+\node[mulnode] (PV) [right=2.0cm of Soft, yshift=-1.5cm] {$\bullet$};
+
+\node[auxnode] (R_Merge) [right=1.6cm of PV] {R};
+\node[auxnode] (Cat) [right=1.7cm of R_Merge] {C};
+
+\node[mulnode] (OProj) [right=1.6cm of Cat] {$\bullet$};
+\node[dimlabel] (WO_FWD) [align=center, below=0.6cm of OProj] {$\widetilde{\mathbf{W}}_{O}$\\$[D,D]$};
+\node[addnode] (AddB) [right=1.6cm of OProj] {+};
+\node[dimlabel] (BO) [align=center, below=0.6cm of AddB] {$BC_{B,S}(\widetilde{\mathbf{b}}_{O})$\\$[D]$};
+\node[auxnode] (Drop) [right=1.6cm of AddB] {DO};
+\node[dimlabel] (Aout) [align=center, right=1.6cm of Drop] {$\mathbf{A}_{\text{out}}$\\$[B,S,D]$};
+
+\draw[flow] (Input) -- (LN);
+
+\draw[flow] (LN.east) -- ++(0.2,0) |- (Proj_Q.west);
+\draw[flow] (LN) -- (Proj_K.west) node[dimlabel, midway, above]{$\mathbf{X}_{\text{norm}}$\\$[B,S,D]$};
+\draw[flow] (LN.east) -- ++(0.2,0) |- (Proj_V.west);
+
+\draw[flow2] (WQ) -- (Proj_Q);
+\draw[flow2] (WK) -- (Proj_K);
+\draw[flow2] (WV) -- (Proj_V);
+
+\draw[flow] (Proj_Q) -- (R_Q) node[dimlabel, midway, above]{$[B,S,D]$};
+\draw[flow] (Proj_K) -- (R_K) node[dimlabel, midway, above]{$[B,S,D]$};
+\draw[flow] (Proj_V) -- (R_V) node[dimlabel, midway, above]{$[B,S,D]$};
+
+\draw[flow] (R_Q) -| (QK) node[dimlabel, near start, above]{$\mathbf{Q}$\\$[B,N_H,S,D_h]$};
+\draw[flow] (R_K) -- (T_K) node[dimlabel, midway, above]{$\mathbf{K}$\\$[B,N_H,S,D_h]$};
+\draw[flow2] (T_K) -| (QK) node[dimlabel, near end, right]{$\mathbf{K}^{T}$\\$[B,N_H,D_h,S]$};
+
+\draw[flow] (QK) -- (SM) node[dimlabel, midway, above]{$\mathbf{A}$\\$[B,N_H,S,S]$};
+\draw[flow] (SM) -- (Soft) node[dimlabel, midway, above]{$[B,N_H,S,S]$};
+\draw[flow] (Soft) -| (PV) node[dimlabel, near start, above]{$\mathbf{AS}$\\$[B,N_H,S,S]$};
+\draw[flow2] (R_V) -| (PV) node[dimlabel, pos=0.1, above]{$\mathbf{V}$\\$[B,N_H,S,D_h]$};
+
+\draw[flow] (PV) -- (R_Merge) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{heads}}$\\$[B,N_H,S,D_h]$};
+\draw[flow] (R_Merge) -- (Cat) node[dimlabel, midway, above]{$[B,S,N_H,D_h]$};
+\draw[flow] (Cat) -- (OProj) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{cat}}$\\$[B,S,D]$};
+\draw[flow2] (WO_FWD) -- (OProj);
+\draw[flow] (OProj) -- (AddB) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{lin}}$\\$[B,S,D]$};
+\draw[flow] (BO) -- (AddB);
+\draw[flow] (AddB) -- (Drop) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{bias}}$\\$[B,S,D]$};
+\draw[flow] (Drop) -- (Aout);
+\end{tikzpicture}%
+}

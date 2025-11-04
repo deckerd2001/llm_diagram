@@ -1,0 +1,100 @@
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    node distance=2.5cm,
+    >=stealth,
+    block/.style={rectangle, draw=black, fill=white, text width=5em, text centered, rounded corners, minimum height=8em, font=\bfseries},
+    forward/.style={-{Stealth[length=2mm]}, thick, black},
+    backward/.style={-{Stealth[length=2mm]}, thick, black, densely dashed},
+    dpcomm/.style={<->, thick, red!70, dashed},
+    io/.style={text centered, font=\bfseries}
+]
+    % Title
+    \node[font=\Large\bfseries] at (7, 12) {Data Parallel Transformer Flow};
+
+    % ========== Node i (Upper) ==========
+    \node (input_i) [io] at (0, 10) {$\mathbf{X}_i$};
+    \node (encoding_i) [block, right of=input_i, yshift=-3em] {Input\\Encoding$_i$};
+    \node (mha_i) [block, right of=encoding_i] {MHA$_i$};
+    \node (mlp_i) [block, right of=mha_i] {FFN$_i$};
+    \node (output_i) [block, right of=mlp_i] {Output\\Projection$_i$};
+    \node (pred_i) [io, right of=output_i, yshift=3em] {$\mathbf{Y}_i$};
+    \node (loss_i) [align=center, io, right of=output_i] {\small LOSS:\\$\mathcal{L}_i$};
+    \node (gradient_i) [io, right of=output_i, yshift=-3em] {$\mathbf{dY}_i$};
+
+    % Forward arrows - Node i
+    \draw [forward] (input_i) -- ([yshift=3em]encoding_i.west);
+    \draw [forward] ([yshift=3em]encoding_i.east) -- ([yshift=3em]mha_i.west);
+    \draw [forward] ([yshift=3em]mha_i.east) -- ([yshift=3em]mlp_i.west);
+    \draw [forward] ([yshift=3em]mlp_i.east) -- ([yshift=3em]output_i.west);
+    \draw [forward] ([yshift=3em]output_i.east) -- (pred_i);
+    \draw [forward] (pred_i) -- (loss_i);
+    \draw [backward] (loss_i) -- (gradient_i);
+
+    % Backward arrows - Node i
+    \draw [backward] (gradient_i) -- ([yshift=-3em]output_i.east);
+    \draw [backward] ([yshift=-3em]output_i.west) -- ([yshift=-3em]mlp_i.east);
+    \draw [backward] ([yshift=-3em]mlp_i.west) -- ([yshift=-3em]mha_i.east);
+    \draw [backward] ([yshift=-3em]mha_i.west) -- ([yshift=-3em]encoding_i.east);
+
+    % Brace for layer repetition - Node i
+    \draw[decorate, decoration={brace, amplitude=10pt}]
+        ([yshift=1.0em]mha_i.north west) -- ([yshift=1.0em]mlp_i.north east)
+        node[midway, above=12pt, font=\normalsize] {$N$ layers};
+
+    % ========== Node j (Lower) ==========
+    \node (input_j) [io] at (0, 6) {$\mathbf{X}_j$};
+    \node (encoding_j) [block, right of=input_j, yshift=-3em] {Input\\Encoding$_j$};
+    \node (mha_j) [block, right of=encoding_j] {MHA$_j$};
+    \node (mlp_j) [block, right of=mha_j] {FFN$_j$};
+    \node (output_j) [block, right of=mlp_j] {Output\\Projection$_j$};
+    \node (pred_j) [io, right of=output_j, yshift=3em] {$\mathbf{Y}_j$};
+    \node (loss_j) [align=center, io, right of=output_j] {\small LOSS:\\$\mathcal{L}_j$};
+    \node (gradient_j) [io, right of=output_j, yshift=-3em] {$\mathbf{dY}_j$};
+
+    % Forward arrows - Node j
+    \draw [forward] (input_j) -- ([yshift=3em]encoding_j.west);
+    \draw [forward] ([yshift=3em]encoding_j.east) -- ([yshift=3em]mha_j.west);
+    \draw [forward] ([yshift=3em]mha_j.east) -- ([yshift=3em]mlp_j.west);
+    \draw [forward] ([yshift=3em]mlp_j.east) -- ([yshift=3em]output_j.west);
+    \draw [forward] ([yshift=3em]output_j.east) -- (pred_j);
+    \draw [forward] (pred_j) -- (loss_j);
+    \draw [backward] (loss_j) -- (gradient_j);
+
+    % Backward arrows - Node j
+    \draw [backward] (gradient_j) -- ([yshift=-3em]output_j.east);
+    \draw [backward] ([yshift=-3em]output_j.west) -- ([yshift=-3em]mlp_j.east);
+    \draw [backward] ([yshift=-3em]mlp_j.west) -- ([yshift=-3em]mha_j.east);
+    \draw [backward] ([yshift=-3em]mha_j.west) -- ([yshift=-3em]encoding_j.east);
+
+    % ========== DP Communications ==========
+    \draw [dpcomm] (mha_i.south) -- (mha_j.north) node[midway, right, font=\tiny, align=left] {All-Reduce\\$(\nabla W_{Q,K,V,O})$};
+    \draw [dpcomm] (mlp_i.south) -- (mlp_j.north) node[midway, right, font=\tiny, align=left] {All-Reduce\\$(\nabla W_{\text{up},\text{down}})$};
+
+    % Labels (Legend)
+    \coordinate (legend) at ([xshift=11.5cm, yshift=8.5em]input_i);
+
+    % Forward (작은 화살표 + 작은 글자)
+    \draw[
+        forward,
+        -{Stealth[length=1.2mm,width=1.4mm]}, % 화살표 더 작게
+        line width=0.3pt                       % 선 더 얇게
+    ] (legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {Forward};
+
+    % Backward
+    \draw[
+        backward,
+        -{Stealth[length=1.2mm,width=1.4mm]},
+        line width=0.3pt
+    ] ([yshift=-0.4cm]legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {Backward};
+
+    % DP Comm
+    \draw[
+        dpcomm,
+        line width=0.3pt
+    ] ([yshift=-0.8cm]legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {DP Comm};
+\end{tikzpicture}%
+}

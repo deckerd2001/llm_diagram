@@ -1,0 +1,111 @@
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    node distance=2.5cm,
+    >=stealth,
+    block/.style={rectangle, draw=black, fill=white, text width=5em, text centered, rounded corners, minimum height=8em, font=\bfseries},
+    blockstack/.style={rectangle, draw=black!60, fill=white, text width=5em, text centered, rounded corners, minimum height=8em},
+    forward/.style={-{Stealth[length=2mm]}, thick, black},
+    backward/.style={-{Stealth[length=2mm]}, thick, black, densely dashed},
+    allreduce/.style={{Stealth[length=1.5mm]}-{Stealth[length=1.5mm]}, thick, red!70, densely dotted},
+    io/.style={text centered, font=\bfseries}
+]
+    % Title
+    \node[font=\Large\bfseries] at (10, 6) {Transformer Overall Flow (TP with 3 GPUs)};
+
+    % Forward path nodes (horizontal)
+    \node (input) [io] {$\mathbf{X}$};
+    \node (encoding) [block, right of=input, yshift=-3em] {Input\\Encoding};
+
+    % MHA blocks (3 stacked) - GPU 2 (back)
+    \node (mha3) [blockstack, right of=encoding, xshift=0.3cm, yshift=0.3cm] {};
+    % MHA blocks (3 stacked) - GPU 1 (middle)
+    \node (mha2) [blockstack, right of=encoding, xshift=0.15cm, yshift=0.15cm] {};
+    % MHA blocks (3 stacked) - GPU 0 (front)
+    \node (mha) [block, right of=encoding] {MHA};
+
+    % Small GPU labels for MHA
+    \node[font=\tiny, anchor=north east] at (mha.north east) {GPU 0};
+
+    % FFN blocks (3 stacked) - GPU 2 (back)
+    \node (mlp3) [blockstack, right of=mha, xshift=0.3cm, yshift=0.3cm] {};
+    % FFN blocks (3 stacked) - GPU 1 (middle)
+    \node (mlp2) [blockstack, right of=mha, xshift=0.15cm, yshift=0.15cm] {};
+    % FFN blocks (3 stacked) - GPU 0 (front)
+    \node (mlp) [block, right of=mha] {FFN};
+
+    % Small GPU labels for FFN
+    \node[font=\tiny, anchor=north east] at (mlp.north east) {GPU 0};
+
+    \node (output) [block, right of=mlp] {Output\\Projection};
+    \node (pred) [io, right of=output, yshift=3em] {$\mathbf{Y}$};
+    \node (loss) [align=center, io, right of=output] {\small LOSS:\\$\mathcal{L}(\mathbf{Y,Y_\text{targets}})$};
+    \node (gradient) [io, right of=output, yshift=-3em] {$\mathbf{dY}(=\frac{dL}{dY})$};
+
+    % All-Reduce arrows (Backward drawn first, then blocks, then Forward on top)
+    % Backward All-Reduce - FFN (left-bottom corner, lower position)
+    \draw [allreduce] ([yshift=-0.2cm]mlp.south west) -- ([xshift=0.3cm, yshift=0.1cm]mlp.south west);
+    \node[font=\tiny, red!70, anchor=north] at ([xshift=0.15cm, yshift=-0.25cm]mlp.south west) {all\_reduce(dX)};
+
+    % Backward All-Reduce - MHA (left-bottom corner, lower position)
+    \draw [allreduce] ([yshift=-0.2cm]mha.south west) -- ([xshift=0.3cm, yshift=0.1cm]mha.south west);
+    \node[font=\tiny, red!70, anchor=north] at ([xshift=0.15cm, yshift=-0.25cm]mha.south west) {all\_reduce(dX)};
+
+    % Redraw blocks to cover backward All-Reduce arrows
+    \draw [draw=black!60, fill=white, rounded corners] (mha3.south west) rectangle (mha3.north east);
+    \draw [draw=black!60, fill=white, rounded corners] (mha2.south west) rectangle (mha2.north east);
+    \draw [draw=black, fill=white, rounded corners, line width=0.4pt] (mha.south west) rectangle (mha.north east);
+    \node[font=\bfseries] at (mha.center) {MHA};
+    \node[font=\tiny, anchor=north east] at (mha.north east) {GPU 0};
+
+    \draw [draw=black!60, fill=white, rounded corners] (mlp3.south west) rectangle (mlp3.north east);
+    \draw [draw=black!60, fill=white, rounded corners] (mlp2.south west) rectangle (mlp2.north east);
+    \draw [draw=black, fill=white, rounded corners, line width=0.4pt] (mlp.south west) rectangle (mlp.north east);
+    \node[font=\bfseries] at (mlp.center) {FFN};
+    \node[font=\tiny, anchor=north east] at (mlp.north east) {GPU 0};
+
+    % Forward All-Reduce - MHA (right-top corner) - drawn after blocks to appear on top
+    \draw [allreduce] (mha.north east) -- ([xshift=0.3cm, yshift=0.3cm]mha.north east);
+    \node[font=\tiny, red!70, anchor=south] at ([xshift=0.15cm, yshift=0.35cm]mha.north east) {all\_reduce(X)};
+
+    % Forward All-Reduce - FFN (right-top corner) - drawn after blocks to appear on top
+    \draw [allreduce] (mlp.north east) -- ([xshift=0.3cm, yshift=0.3cm]mlp.north east);
+    \node[font=\tiny, red!70, anchor=south] at ([xshift=0.15cm, yshift=0.35cm]mlp.north east) {all\_reduce(X)};
+
+    % Forward arrows (upper part of blocks)
+    \draw [forward] (input) -- ([yshift=3em]encoding.west);
+    \draw [forward] ([yshift=3em]encoding.east) -- ([yshift=3em]mha.west);
+    \draw [forward] ([yshift=3em]mha.east) -- ([yshift=3em]mlp.west);
+    \draw [forward] ([yshift=3em]mlp.east) -- ([yshift=3em]output.west);
+    \draw [forward] ([yshift=3em]output.east) -- (pred);
+    \draw [forward] (pred) -- (loss);
+    \draw [backward] (loss) -- (gradient);
+
+    % Backward arrows (lower part of blocks)
+    \draw [backward] (gradient) -- ([yshift=-3em]output.east);
+    \draw [backward] ([yshift=-3em]output.west) -- ([yshift=-3em]mlp.east);
+    \draw [backward] ([yshift=-3em]mlp.west) -- ([yshift=-3em]mha.east);
+    \draw [backward] ([yshift=-3em]mha.west) -- ([yshift=-3em]encoding.east);
+
+    % Brace for layer repetition (horizontal - using mlp with x offset to match mlp3)
+    \draw[decorate, decoration={brace, amplitude=10pt}]
+        ([yshift=4.8em]mha.north west) -- ([xshift=0.3cm, yshift=4.8em]mlp.north east)
+        node[midway, above=12pt, font=\normalsize] {$N$ layers};
+
+    % Labels (Legend)
+    \coordinate (legend) at ([xshift=-1.5cm, yshift=6.5em]input);
+    \draw[forward] (legend) -- ++(0.8,0) node[right, font=\normalsize] {Forward};
+    \draw[backward] ([yshift=-0.6cm]legend) -- ++(0.8,0) node[right, font=\normalsize] {Backward};
+    \draw[allreduce] ([yshift=-1.2cm]legend) -- ++(0.8,0) node[right, font=\normalsize] {All-Reduce};
+
+    % TP explanation
+    \node[font=\scriptsize, align=left, text width=6cm] at ([xshift=2cm, yshift=-5.5em]encoding.south) {
+        \textbf{Tensor Parallelism:}\\
+        • Each GPU processes a shard of the weight matrix\\
+        • All-Reduce synchronizes partial results\\
+        • Forward: after row-parallel ops\\
+        • Backward: after column-parallel ops
+    };
+
+\end{tikzpicture}%
+}

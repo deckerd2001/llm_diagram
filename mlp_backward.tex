@@ -1,0 +1,102 @@
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    >=stealth,
+    auxnode/.style={draw, rectangle, fill=white, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center},
+    mulnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+    addnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+    sumnode/.style={draw, circle, fill=white, minimum size=6mm, font=\tiny, align=center},
+    flow_rev/.style={<-, thick, black!85},
+    flow_dw/.style={->, thick, black!85},
+    flow_act/.style={double, ->, thick, black!85},
+    dimlabel/.style={font=\tiny, inner sep=1pt, align=center},
+    gradlabel/.style={font=\tiny\bfseries, inner sep=1pt, align=center}
+]
+    \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass};
+
+    \pgfmathsetmacro{\backwardoffset}{0.0}
+
+    \node (d_MOut) at (12.6, \backwardoffset) {$\mathrm{d}\mathbf{Y}$};
+    \node[auxnode] (d_Drop2) [left=1.8cm of d_MOut] {dDO};
+    \draw[flow_rev] (d_Drop2) -- (d_MOut)
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Y}$\\$[B,S,D]$}};
+
+    \coordinate (split2) at ($(d_Drop2.west) + (-1.5cm, 0)$);
+    \coordinate (branch_dUproj) at ($(split2) + (-1.2cm, 0)$);
+
+    \node[sumnode] (d_SumB2) [above=0.8cm of split2] {$\sum_{B, S}$};
+    \node (d_Bdown) [above=0.8cm of d_SumB2] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{down}}$};
+    \draw[flow_dw] (d_SumB2) -- (d_Bdown) node[dimlabel, midway, right]{$[D]$};
+
+    \draw[flow_rev] (split2) -- (d_Drop2);
+    \draw[flow_rev] (d_SumB2) -- (split2);
+
+    \node[mulnode] (d_L2Mul_in) [left=2.2cm of split2] {$\bullet$};
+    \draw[flow_rev] (d_L2Mul_in) -- (d_Drop2)
+      node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{down}}=\mathrm{d}\mathbf{A}_{\text{out}}$\\$[B,S,D]$}};
+
+    \node (W_down_T) [below=1.8cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{T}$};
+    \draw[flow_act] (W_down_T.north) -- (d_L2Mul_in)
+      node[dimlabel, midway, right]{$[D, D_{ff}]$};
+
+    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 3.5cm)$);
+    \node[mulnode] (d_L2Mul_w) at (L2Mul_w_y) {$\bullet$};
+    \node (d_Wdown) [above=0.8cm of d_L2Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{down}}$};
+    \draw[flow_dw] (d_L2Mul_w) -- (d_Wdown) node[dimlabel, midway, right]{$[D_{ff}, D]$};
+
+    \draw[flow_act] (branch_dUproj.north) |- (d_L2Mul_w.east);
+
+    \node[auxnode] (Uin_T) at ($(d_L2Mul_w.west) + (-1.5cm, 0)$) {T};
+    \draw[flow_dw] (Uin_T) -- (d_L2Mul_w)
+      node[dimlabel, midway, below]{\shortstack{$\mathbf{U}_{\text{in}}^T$\\$[B, D_{ff}, S]$}};
+    \node (Uin_aux) [left=1.8cm of Uin_T] {$\mathbf{U}_{\text{in}}$};
+    \draw[flow_dw] (Uin_aux) -- (Uin_T) node[dimlabel, midway, above]{\shortstack{$[B,S,D_{ff}]$}};
+
+    \node[auxnode] (d_Drop1) [left=1.8cm of d_L2Mul_in] {dDO};
+    \draw[flow_rev] (d_Drop1) -- (d_L2Mul_in)
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{U}_{\text{in}}$\\$[B,S,D_{ff}]$}};
+
+    \node[auxnode] (d_Act) [left=1.8cm of d_Drop1] {dGL};
+    \draw[flow_rev] (d_Act) -- (d_Drop1)
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{H}_{\text{inter}}$\\$[B,S,D_{ff}]$}};
+
+    \coordinate (split1) at ($(d_Act.west) + (-1.5cm, 0)$);
+    \coordinate (branch_dHpre) at ($(split1) + (-1.2cm, 0)$);
+
+    \node[sumnode] (d_SumB1) [above=0.8cm of split1] {$\sum_{B, S}$};
+    \node (d_Bup) [above=0.8cm of d_SumB1] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{up}}$};
+    \draw[flow_dw] (d_SumB1) -- (d_Bup) node[dimlabel, midway, right]{$[D_{ff}]$};
+
+    \draw[flow_rev] (split1) -- (d_Act);
+    \draw[flow_rev] (d_SumB1) -- (split1);
+
+    \node[mulnode] (d_L1Mul_in) [left=2.2cm of split1] {$\bullet$};
+    \draw[flow_rev] (d_L1Mul_in) -- (d_Act)
+      node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{up}}=\mathrm{d}\mathbf{A}_{\text{up}}$\\$[B,S,D_{ff}]$}};
+
+    \node (W_up_T) [below=1.8cm of d_L1Mul_in] {$\tilde{\mathbf{W}}_{\text{up}}^{T}$};
+    \draw[flow_act] (W_up_T.north) -- (d_L1Mul_in)
+      node[dimlabel, midway, right]{$[D_{ff}, D]$};
+
+    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 3.5cm)$);
+    \node[mulnode] (d_L1Mul_w) at (L1Mul_w_y) {$\bullet$};
+    \node (d_Wup) [above=0.8cm of d_L1Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{up}}$};
+    \draw[flow_dw] (d_L1Mul_w) -- (d_Wup) node[dimlabel, midway, right]{$[D, D_{ff}]$};
+
+    \draw[flow_act] (branch_dHpre.north) |- (d_L1Mul_w.east);
+
+    \node[auxnode] (Znorm_T) at ($(d_L1Mul_w.west) + (-1.5cm, 0)$) {T};
+    \draw[flow_dw] (Znorm_T) -- (d_L1Mul_w)
+      node[dimlabel, midway, below]{\shortstack{$\mathbf{H}^T$\\$[B, D, S]$}};
+    \node (Znorm_aux) [left=1.8cm of Znorm_T] {$\mathbf{H}$};
+    \draw[flow_dw] (Znorm_aux) -- (Znorm_T) node[dimlabel, midway, above]{\shortstack{$[B,S,D]$}};
+
+    \node[auxnode] (d_LN2) [left=1.8cm of d_L1Mul_in] {dLN};
+    \draw[flow_rev] (d_LN2) -- (d_L1Mul_in)
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{H}$\\$[B,S,D]$}};
+
+    \node (d_MIn) [left=1.8cm of d_LN2] {$\mathrm{d}\mathbf{X}$};
+    \draw[flow_rev] (d_MIn) -- (d_LN2)
+      node[dimlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{X}$\\$[B,S,D]$}};
+\end{tikzpicture}%
+}

@@ -1,0 +1,59 @@
+\renewcommand{\arraystretch}{1.2}
+\small
+
+\begin{center}
+% \textbf{MHA Diagrams: Unified Table (Ops \& Data Tensors)}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lllll}
+\hline
+\textbf{Category} & \textbf{Symbol / Abbrev} & \textbf{Name} & \textbf{Shape / Type} & \textbf{Notes} \\
+\hline
+Ops & LN & Layer Normalization & op & Normalizes per token (last dim $D$). \\
+Ops & DO & Dropout & op & Training-time only; identity at inference. \\
+Ops & $+$ & Bias Add & op & Adds broadcast bias; see $\mathrm{BC}_{B,S}(\cdot)$. \\
+Ops & T & Transpose & op & e.g., $[B,N_H,S,D_h]\!\to\![B,N_H,D_h,S]$. \\
+Ops & R & Reshape / Split / Merge & op & $[B,S,D]\!\leftrightarrow\![B,N_H,S,D_h]$. \\
+Ops & C & Concatenate & op & $[B,S,N_H,D_h]\!\to\![B,S,D]$. \\
+Ops & SM & Scale (+ Mask) & op & Multiply by $1/\sqrt{D_h}$ and apply mask. \\
+Ops & S & Softmax & op & Over key length $S$ per head. \\
+Ops & $\mathrm{BC}_{B,S}(\cdot)$ & Broadcast & op & Broadcast length-$D$ (or $D_h$) to $[B,S,\cdot]$. \\
+Ops & dS & Softmax Backward & op & Backprop through softmax over $S$. \\
+Ops & dSM & Scale/Mask Backward & op & Backprop through scaling/masking. \\
+Ops & dC & De-concat (Backward) & op & Split grads from concatenated heads. \\
+Ops & dLN & LayerNorm Backward & op & Uses cached stats $(\mu,\sigma)$ and $\mathbf{X}$. \\
+\hline
+Data & $\mathbf{X}$ & Input hidden states & $[B,S,D]$ & Into MHA block (pre-LN). \\
+Data & $\mathbf{X}_{\text{norm}}$ & LN output & $[B,S,D]$ & Result of LN($\mathbf{X}$). \\
+Data & $\mathbf{Q},\mathbf{K},\mathbf{V}$ & Query/Key/Value & $[B,N_H,S,D_h]$ & From linear projections of $\mathbf{X}_{\text{norm}}$. \\
+Data & $\widetilde{\mathbf{W}}_{Q}$ & Q weight & $[D,D]$ & Per-head realized via reshape (drawn fused). \\
+Data & $\widetilde{\mathbf{W}}_{K}$ & K weight & $[D,D]$ & Same convention. \\
+Data & $\widetilde{\mathbf{W}}_{V}$ & V weight & $[D,D]$ & Same convention. \\
+Data & $\widetilde{\mathbf{W}}_{O}$ & Output-proj weight & $[D,D]$ & Maps concatenated heads to model dim. \\
+Data & $\widetilde{\mathbf{b}}_{O}$ & Output bias & $[D]$ & Broadcast via $\mathrm{BC}_{B,S}$. \\
+Data & $\mathbf{A}$ & Attention scores & $[B,N_H,S,S]$ & $\mathbf{Q}\mathbf{K}^T/\sqrt{D_h}$ (plus mask). \\
+Data & $\mathbf{AS}$ & Attention weights & $[B,N_H,S,S]$ & $\mathrm{softmax}(\mathbf{A})$. \\
+Data & $\mathbf{AO}_{\text{heads}}$ & Per-head outputs & $[B,N_H,S,D_h]$ & $\mathbf{AS}\cdot\mathbf{V}$. \\
+Data & $\mathbf{AO}_{\text{cat}}$ & Concatenated heads & $[B,S,D]$ & After \textit{C}. \\
+Data & $\mathbf{AO}_{\text{lin}}$ & Linear output & $[B,S,D]$ & $\mathbf{AO}_{\text{cat}}\widetilde{\mathbf{W}}_{O}$. \\
+Data & $\mathbf{AO}_{\text{bias}}$ & Bias-added output & $[B,S,D]$ & $+\;\widetilde{\mathbf{b}}_{O}$. \\
+Data & $\mathbf{A}_{\text{out}}$ & MHA output & $[B,S,D]$ & After dropout; to next sublayer. \\
+Data & $\mathbf{dA}_{\text{out}}$ & Grad wrt MHA output & $[B,S,D]$ & Backprop signal entering MHA. \\
+Data & $\mathbf{dQ},\mathbf{dK},\mathbf{dV}$ & Gradients for Q/K/V & $[B,N_H,S,D_h]$ & From attention-core backward. \\
+Data & $\mathbf{dK^T}$ & Grad of $K^T$ & $[B,N_H,D_h,S]$ & Before transpose/reshape to $\mathbf{dK}$. \\
+Data & $\mathbf{dAO}_{\text{heads}}$ & Grad at heads & $[B,N_H,S,D_h]$ & Split from $\mathbf{dAO}_{\text{cat}}$. \\
+Data & $\mathbf{dX}_{\text{norm},Q}$ & Grad wrt $X_{\text{norm}}$ (Q) & $[B,S,D]$ & Via $W_Q^T$. \\
+Data & $\mathbf{dX}_{\text{norm},K}$ & Grad wrt $X_{\text{norm}}$ (K) & $[B,S,D]$ & Via $W_K^T$. \\
+Data & $\mathbf{dX}_{\text{norm},V}$ & Grad wrt $X_{\text{norm}}$ (V) & $[B,S,D]$ & Via $W_V^T$. \\
+Data & $\mathbf{dX}_{\text{norm}}$ & Sum of above & $[B,S,D]$ & Input to dLN. \\
+Data & $\mathbf{dX}$ & Grad wrt input $X$ & $[B,S,D]$ & Output of dLN. \\
+Data & $\mathbf{d}\widetilde{\mathbf{W}}_{Q}$ & Q weight grad & $[D,D]$ & Standard matmul rule. \\
+Data & $\mathbf{d}\widetilde{\mathbf{W}}_{K}$ & K weight grad & $[D,D]$ & Standard matmul rule. \\
+Data & $\mathbf{d}\widetilde{\mathbf{W}}_{V}$ & V weight grad & $[D,D]$ & From $d\mathbf{V}$ and $X_{\text{norm}}$. \\
+Data & $\mathbf{d}\widetilde{\mathbf{W}}_{O}$ & Output-proj grad & $[D,D]$ & From $\mathbf{AO}_{\text{cat}}^T$ and $d\mathbf{AO}_{\text{lin}}$. \\
+Data & $\mathbf{d}\widetilde{\mathbf{b}}_{O}$ & Output bias grad & $[D]$ & $\sum_{B,S} d\mathbf{AO}_{\text{lin}}$. \\
+\hline
+\multicolumn{5}{l}{\textbf{Shape symbols:}\; $B$=batch,\; $S$=seq,\; $D$=model dim,\; $N_H$=num heads,\; $D_h=D/N_H$.}\\
+\multicolumn{5}{l}{\textbf{Note:}\; Per-head $[D,D]$ drawings depict fused linears via reshape to $N_H\times D_h$.}\\
+\hline
+\end{tabular}
+\end{center}

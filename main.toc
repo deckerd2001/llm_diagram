@@ -1,0 +1,24 @@
+\contentsline {section}{\numberline {1}Single Node Transformer}{3}{}%
+\contentsline {subsection}{\numberline {1.1}Overall Architecture \& Data Flow}{4}{}%
+\contentsline {subsection}{\numberline {1.2}Input Embedding Layer}{5}{}%
+\contentsline {subsubsection}{\numberline {1.2.1}Forward Pass}{5}{}%
+\contentsline {subsubsection}{\numberline {1.2.2}Operations Summary}{6}{}%
+\contentsline {subsection}{\numberline {1.3}Multi-Head Attention (MHA)}{7}{}%
+\contentsline {subsubsection}{\numberline {1.3.1}Forward Pass}{7}{}%
+\contentsline {subsubsection}{\numberline {1.3.2}Backward Pass}{8}{}%
+\contentsline {subsubsection}{\numberline {1.3.3}Operations Summary}{10}{}%
+\contentsline {subsection}{\numberline {1.4}Feed-Forward Network (FFN/MLP)}{11}{}%
+\contentsline {subsubsection}{\numberline {1.4.1}Forward Pass}{11}{}%
+\contentsline {subsubsection}{\numberline {1.4.2}Backward Pass}{12}{}%
+\contentsline {subsubsection}{\numberline {1.4.3}Operations Summary}{13}{}%
+\contentsline {subsection}{\numberline {1.5}Output Projection \& Loss Computation}{14}{}%
+\contentsline {subsubsection}{\numberline {1.5.1}Forward Pass}{14}{}%
+\contentsline {subsubsection}{\numberline {1.5.2}Backward Pass}{15}{}%
+\contentsline {subsubsection}{\numberline {1.5.3}Operations Summary}{16}{}%
+\contentsline {section}{\numberline {2}Tensor Parallelism (TP)}{17}{}%
+\contentsline {subsection}{\numberline {2.1}TP Overview}{18}{}%
+\contentsline {subsection}{\numberline {2.2}Forward Pass}{19}{}%
+\contentsline {subsection}{\numberline {2.3}Backward Pass}{20}{}%
+\contentsline {subsection}{\numberline {2.4}Communication Patterns}{20}{}%
+\contentsline {section}{\numberline {3}Data Parallelism (DP)}{22}{}%
+\contentsline {subsection}{\numberline {3.1}DP Overview}{22}{}%

@@ -1,0 +1,99 @@
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={transform shape},
+  >=stealth,
+  auxnode/.style={draw, rectangle, fill=white, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center},
+  mulnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  addnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  allreduce/.style={draw, rectangle, fill=red!30, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center, thick, draw=red!70},
+  flow/.style={->, thick, black!85},
+  flow2/.style={->, double, thick, black!85},
+  commflow/.style={<->, thick, red!70, dashed},
+  dimlabel/.style={font=\tiny, inner sep=0.5pt, align=center}
+]
+\node[font=\Large\bfseries] at (9, 4.5) {Multi-Head Attention Forward Pass (Node $i$)};
+
+\node (Input) at (0.5, 0) [align=center] {$\mathbf{X}$\\$[B,S,D]$};
+\node[auxnode] (LN) [right=0.5cm of Input] {LN};
+
+\node[mulnode] (Proj_Q) [right=2.0cm of LN, yshift=3.2cm] {$\bullet$};
+\node[auxnode] (R_Q) [right=1.5cm of Proj_Q] {R};
+
+\node[mulnode] (Proj_K) [right=2.0cm of LN, yshift=0cm] {$\bullet$};
+\node[auxnode] (R_K) [right=1.5cm of Proj_K] {R};
+
+\node[mulnode] (Proj_V) [right=2.0cm of LN, yshift=-3.2cm] {$\bullet$};
+\node[auxnode] (R_V) [right=1.5cm of Proj_V] {R};
+
+\node[dimlabel] (WQ) [align=center, below=1.0cm of Proj_Q] {$\widetilde{\mathbf{W}}_{Q}^{(i)}$\\$[D,N_{HN}D_h]$};
+\node[dimlabel] (WK) [align=center, below=1.0cm of Proj_K] {$\widetilde{\mathbf{W}}_{K}^{(i)}$\\$[D,N_{HN}D_h]$};
+\node[dimlabel] (WV) [align=center, below=1.0cm of Proj_V] {$\widetilde{\mathbf{W}}_{V}^{(i)}$\\$[D,N_{HN}D_h]$};
+
+\node[auxnode] (T_K) [right=2.0cm of R_K] {T};
+\node[mulnode] (QK) [right=3.2cm of R_Q, yshift=-1.6cm] {$\bullet$};
+\node[auxnode] (SM) [right=2.0cm of QK] {SM};
+\node[auxnode] (Soft) [right=2.0cm of SM] {S};
+\node[mulnode] (PV) [right=2.4cm of Soft, yshift=-1.6cm] {$\bullet$};
+
+\node[auxnode] (R_Merge) [right=2.0cm of PV] {R};
+\node[auxnode] (Cat) [right=2.0cm of R_Merge] {C};
+
+\node[mulnode] (OProj) [right=2.5cm of Cat] {$\bullet$};
+\node[dimlabel] (WO_FWD) [align=center, below=1.0cm of OProj] {$\widetilde{\mathbf{W}}_{O}^{(i)}$\\$[N_{HN}D_h,D]$};
+\node[allreduce] (AR) [right=2.0cm of OProj] {AR};
+\node[
+  align=center,
+  below=2.5cm of AR,
+  text width=5.5cm % 적당한 값으로 조정
+] (AR_info) {%
+  \textbf{All Reduce Comm.}:\\[2pt]
+  \begin{itemize}
+    \item \textbf{Naive:} $2(N_T-1) \times [B,S,D]$
+    \item \textbf{Ring:} $2\frac{N_T-1}{N_T} \times [B,S,D]$
+  \end{itemize}
+};
+\node[addnode] (AddB) [right=2.0cm of AR] {+};
+\node[dimlabel] (BO) [align=center, below=1.0cm of AddB] {$\widetilde{\mathbf{b}}_{O}$\\$[D]$};
+\node[auxnode] (Drop) [right=1.5cm of AddB] {DO};
+\node (Aout) [align=center, right=0.5cm of Drop] {$\mathbf{A}_{\text{out}}$\\$[B,S,D]$};
+
+\draw[flow] (Input) -- (LN);
+
+\draw[flow] (LN.east) -- ++(0.3,0) |- (Proj_Q.west);
+\draw[flow] (LN) -- (Proj_K.west) node[dimlabel, midway, above]{$\mathbf{X}_{\text{norm}}$\\$[B,S,D]$};
+\draw[flow] (LN.east) -- ++(0.3,0) |- (Proj_V.west);
+
+\draw[flow2] (WQ) -- (Proj_Q);
+\draw[flow2] (WK) -- (Proj_K);
+\draw[flow2] (WV) -- (Proj_V);
+
+\draw[flow] (Proj_Q) -- (R_Q) node[dimlabel, midway, above]{$[B,S,N_{HN}D_h]$};
+\draw[flow] (Proj_K) -- (R_K) node[dimlabel, midway, above]{$[B,S,N_{HN}D_h]$};
+\draw[flow] (Proj_V) -- (R_V) node[dimlabel, midway, above]{$[B,S,N_{HN}D_h]$};
+
+\draw[flow] (R_Q) -| (QK) node[dimlabel, near start, above]{$\mathbf{Q}_i$\\$[B,N_{HN},S,D_h]$};
+\draw[flow] (R_K) -- (T_K) node[dimlabel, midway, above]{$\mathbf{K}_i$\\$[B,N_{HN},S,D_h]$};
+\draw[flow2] (T_K) -| (QK) node[dimlabel, near end, right]{$\mathbf{K}_i^{T}$\\$[B,N_{HN},D_h,S]$};
+
+\draw[flow] (QK) -- (SM) node[dimlabel, midway, above]{$\mathbf{A}_i$\\$[B,N_{HN},S,S]$};
+\draw[flow] (SM) -- (Soft) node[dimlabel, midway, above]{$[B,N_{HN},S,S]$};
+\draw[flow] (Soft) -| (PV) node[dimlabel, near start, above]{$\mathbf{AS}_i$\\$[B,N_{HN},S,S]$};
+\draw[flow2] (R_V) -| (PV) node[dimlabel, pos=0.08, above]{$\mathbf{V}_i$\\$[B,N_{HN},S,D_h]$};
+
+\draw[flow] (PV) -- (R_Merge) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{h},i}$\\$[B,N_{HN},S,D_h]$};
+\draw[flow] (R_Merge) -- (Cat) node[dimlabel, midway, above]{$[B,S,N_{HN},D_h]$};
+\draw[flow] (Cat) -- (OProj) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{c},i}$\\$[B,S,N_{HN}D_h]$};
+\draw[flow2] (WO_FWD) -- (OProj);
+\draw[flow] (OProj) -- (AR) node[dimlabel, midway, above]{$\mathbf{AO}_{\text{l},i}$\\$[B,S,D]$};
+
+% All-Reduce communication arrows
+\draw[commflow] (AR.north) -- ++(0, 2.0) node[midway, right, font=\tiny]{Node $j$};
+\draw[commflow] (AR.south) -- ++(0, -2.4) node[midway, right, font=\tiny]{Node $k$};
+
+\draw[flow] (AR) -- (AddB) node[dimlabel, midway, above]{$[B,S,D]$};
+\draw[flow] (BO) -- (AddB);
+\draw[flow] (AddB) -- (Drop) node[dimlabel, midway, above]{$[B,S,D]$};
+\draw[flow] (Drop) -- (Aout);
+\end{tikzpicture}%
+}

@@ -1,0 +1,45 @@
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{center}
+\textbf{MLP (Feed-Forward) Block: Unified Table (Ops \& Data)}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lllll}
+\hline
+\textbf{Category} & \textbf{Symbol / Abbrev} & \textbf{Name} & \textbf{Shape / Type} & \textbf{Notes} \\
+\hline
+Ops & LN    & Layer Normalization   & op & Normalize per token (last dim $D$). \\
+Ops & $\bullet$ & Linear (MatMul)   & op & Used for up/down projections. \\
+Ops & $+$   & Bias Add              & op & Adds broadcast bias; $\mathrm{BC}_{B,S}(\cdot)$. \\
+Ops & GL    & GELU (or activation)  & op & Nonlinearity on $D_{ff}$. \\
+Ops & DO    & Dropout               & op & Training-time only (identity at inference). \\
+Ops & T     & Transpose             & op & Used in weight-grad computations. \\
+Ops & $\sum_{B,S}$ & Reduce-Sum     & op & Bias-grad accumulation over batch, seq. \\
+\hline
+Data & $\mathbf{X}$     & Input states         & $[B,S,D]$       & Block input. \\
+Data & $\mathbf{H}$     & LN output            & $[B,S,D]$       & LN($\mathbf{X}$). \\
+Data & $\tilde{\mathbf{W}}_{\text{up}}$   & Up weight     & $[D, D_{ff}]$ & First projection. \\
+Data & $\tilde{\mathbf{b}}_{\text{up}}$   & Up bias       & $[D_{ff}]$    & Broadcast to $[B,S,D_{ff}]$. \\
+Data & $\mathbf{Z}_{\text{up}}$           & Pre-activation & $[B,S,D_{ff}]$ & $H W_{\text{up}} + b_{\text{up}}$. \\
+Data & $\mathbf{A}_{\text{up}}$           & Activated      & $[B,S,D_{ff}]$ & $f(\mathbf{Z}_{\text{up}})$. \\
+Data & $\mathbf{H}_{\text{inter}}$        & Post-DO        & $[B,S,D_{ff}]$ & After Dropout. \\
+Data & $\tilde{\mathbf{W}}_{\text{down}}$ & Down weight    & $[D_{ff},D]$  & Second projection. \\
+Data & $\tilde{\mathbf{b}}_{\text{down}}$ & Down bias      & $[D]$         & Broadcast to $[B,S,D]$. \\
+Data & $\mathbf{Z}_{\text{down}}$         & Linear output  & $[B,S,D]$     & $H_{\text{inter}} W_{\text{down}} + b_{\text{down}}$. \\
+Data & $\mathbf{A}_{\text{out}}$          & Bias-added     & $[B,S,D]$     & Before dropout (out). \\
+Data & $\mathbf{Y}$                       & Block output   & $[B,S,D]$     & After Dropout. \\
+\hline
+Data & $\text{d}\mathbf{Y}$                & Grad output    & $[B,S,D]$     & Incoming grad. \\
+Data & $\text{d}\mathbf{Z}_{\text{down}}$  & Grad lin-out   & $[B,S,D]$     & Equals $d\mathbf{A}_{\text{out}}$. \\
+Data & $\text{d}\mathbf{U}_{\text{in}}$    & Grad into down & $[B,S,D_{ff}]$& To weight/bias grads. \\
+Data & $\text{d}\mathbf{Z}_{\text{up}}$    & Grad pre-act   & $[B,S,D_{ff}]$& Equals $d\mathbf{A}_{\text{up}}\cdot f'$. \\
+Data & $\text{d}\mathbf{H}$                & Grad LN out    & $[B,S,D]$     & Into dLN. \\
+Data & $\text{d}\mathbf{X}$                & Grad input     & $[B,S,D]$     & Block input grad. \\
+Data & $\text{d}\tilde{\mathbf{W}}_{\text{up}}$   & Weight grad up   & $[D, D_{ff}]$ & From $H^T$ and $dZ_{\text{up}}$. \\
+Data & $\text{d}\tilde{\mathbf{W}}_{\text{down}}$ & Weight grad down & $[D_{ff}, D]$ & From $U_{\text{in}}^T$ and $dZ_{\text{down}}$. \\
+Data & $\text{d}\tilde{\mathbf{b}}_{\text{up}}$   & Bias grad up     & $[D_{ff}]$     & $\sum_{B,S} dZ_{\text{up}}$. \\
+Data & $\text{d}\tilde{\mathbf{b}}_{\text{down}}$ & Bias grad down   & $[D]$          & $\sum_{B,S} dZ_{\text{down}}$. \\
+\hline
+\multicolumn{5}{l}{\textbf{Shape symbols: } $B$=batch,\; $S$=sequence,\; $D$=model dim,\; $D_{ff}$=FFN hidden dim (e.g., $4\times D$).}\\
+\hline
+\end{tabular}
+\end{center}

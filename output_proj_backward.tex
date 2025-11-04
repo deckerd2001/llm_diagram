@@ -1,0 +1,71 @@
+\noindent
+\resizebox{0.8\linewidth}{!}{%
+\begin{tikzpicture}[
+  >=stealth,
+  auxnode/.style={draw, rectangle, fill=white, minimum height=6mm, inner sep=2pt, font=\footnotesize, align=center},
+  mulnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  addnode/.style={draw, circle, fill=white, minimum size=6mm, font=\footnotesize, align=center},
+  sumnode/.style={draw, circle, fill=white, minimum size=6mm, font=\tiny, align=center},
+  flow/.style={<-, thick, black!85},
+  flow2/.style={double, <-, thick, black!85},
+  fwd/.style={->, thick, black!85},
+  gradflow/.style={->, thick, black!85},
+  dimlabel/.style={font=\tiny, inner sep=1pt, align=center}
+]
+
+% Start from dL
+\node           (dL)    at (18,0) {$\text{d}\mathcal{L}$};
+\node[auxnode]  (dCE)   [below=2.0cm of dL] {dCE};
+\node           (Y)     [below=0.9cm of dCE] {$\mathbf{Y_\text{targets}}$};
+
+% Softmax backward
+\node[auxnode]  (dS)   [left=2.0cm of dCE] {dS};
+\node           (P)     [below=0.9cm of dS] {$\mathbf{P}$};
+
+% Logits (Linear Projection) backprop node
+\node[mulnode]  (backMul) [left=4.4cm of dS] {$\bullet$};
+\node[auxnode]  (T_Wlm)   [below=0.9cm of backMul] {T};
+\node           (Wlm)     [align=center, below=0.9cm of T_Wlm] {$\widetilde{\mathbf{W}}_{\text{lm}}$\\$[D,V]$};
+
+\coordinate (B_split) at ($(backMul)!0.5!(dS)$);
+
+% SUM node for Bias gradient
+\node[sumnode]  (SumB) [below=1.5cm of B_split] {$\sum_{B,S}$};
+\node           (db)   [align=center, below=0.8cm of SumB] {$\text{d}\widetilde{\mathbf{b}}_{\text{lm}}$\\$[V]$};
+
+% dW calc
+\node[mulnode]  (dWmul) [above=2.8cm of backMul] {$\bullet$};
+\node[auxnode]  (TAout) [left=1.5cm of dWmul] {T};
+\node           (Aout)  [left=1.6cm of TAout] {$\mathbf{A}_{\text{out}}$};
+\node           (dW)    [align=center, above=0.8cm of dWmul] {$\text{d}\widetilde{\mathbf{W}}_{\text{lm}}$\\$[D,V]$};
+
+% Back to Transformer
+\node           (dH)    [left=2.6cm of backMul] {$\text{d}\mathbf{A}_{\text{out}}$};
+
+% Flows
+\draw[flow] (dCE) -- (dL);
+\draw[fwd]  (Y) -- (dCE);
+\draw[flow] (dS) -- (dCE);
+\draw[fwd]  (P) -- (dS);
+
+% Bias grad
+\draw[gradflow] (B_split) -- (SumB.north);
+\draw[gradflow] (SumB) -- (db);
+
+% Linear projection backprop
+\draw[flow] (backMul) -- (dS)
+  node[dimlabel, pos=0.71, above]{\shortstack{$\text{d}\mathbf{Z}_{\text{lin}}=\text{d}\mathbf{Z}_{\text{bias}}$\\$[B,S,V]$}};
+\draw[flow2] (backMul) -- (T_Wlm);
+\draw[fwd]   (Wlm) -- (T_Wlm);
+\draw[flow]  (dH) -- (backMul) node[dimlabel, midway, above]{\shortstack{$\text{d}\mathbf{A}_{\text{out}}$\\$[B,S,D]$}};
+
+% dW calculation
+\draw[gradflow] (dWmul) -- (dW);
+\draw[fwd]  (Aout) -- (TAout);
+\draw[fwd]  (TAout) -- (dWmul) node[dimlabel, midway, above]{\shortstack{$[B,D,S]$}};
+\draw[flow2] (dWmul) -| (B_split);
+
+\node[font=\large\bfseries, anchor=south]
+  at ([yshift=6mm]current bounding box.north) {Token Generation \& Loss — Backward (Corrected)};
+\end{tikzpicture}%
+}

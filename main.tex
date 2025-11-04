@@ -1,0 +1,184 @@
+\documentclass{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage[margin=1in, landscape]{geometry}
+\usetikzlibrary{shapes, arrows, positioning, fit, calc}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, decorations.pathreplacing}
+
+% Page numbering
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+\begin{document}
+
+% Title Page
+\begin{center}
+    \vspace*{3cm}
+    {\Huge\bfseries Transformer Architecture\\[0.5cm]
+    Implementation Details}\\[2cm]
+    {\Large Forward \& Backward Pass Analysis}\\[1cm]
+    {\large with Tensor Parallelism}\\[3cm]
+    \today
+\end{center}
+
+\clearpage
+
+% Table of Contents
+\tableofcontents
+
+\clearpage
+
+% ============================================================
+% CHAPTER 1: SINGLE NODE TRANSFORMER
+% ============================================================
+\section{Single Node Transformer}
+
+This chapter covers the complete forward and backward pass of a Transformer model running on a single node (no parallelism).
+
+\clearpage
+
+% ---- 1.1 Overview ----
+\subsection{Overall Architecture \& Data Flow}
+
+The following diagram shows the high-level architecture of a Transformer layer, including both forward and backward passes.
+
+\vspace{1cm}
+
+\input{transformer_overall_flow.tex}
+
+\clearpage
+
+% ---- 1.2 Input Embedding ----
+\subsection{Input Embedding Layer}
+
+The input embedding layer converts token indices into dense vector representations and adds positional encodings.
+
+\vspace{1cm}
+
+\subsubsection{Forward Pass}
+\input{input_embedding.tex}
+
+\clearpage
+
+\subsubsection{Operations Summary}
+\input{input_embedding_table.tex}
+
+\clearpage
+
+% ---- 1.3 Multi-Head Attention ----
+\subsection{Multi-Head Attention (MHA)}
+
+Multi-Head Attention enables the model to jointly attend to information from different representation subspaces.
+
+\vspace{1cm}
+
+\subsubsection{Forward Pass}
+\input{mha_forward.tex}
+
+\clearpage
+
+\subsubsection{Backward Pass}
+\input{mha_backward.tex}
+
+\clearpage
+
+\subsubsection{Operations Summary}
+\input{mha_table.tex}
+
+\clearpage
+
+% ---- 1.4 Feed-Forward Network ----
+\subsection{Feed-Forward Network (FFN/MLP)}
+
+The FFN consists of two linear transformations with a non-linear activation function in between.
+
+\vspace{1cm}
+
+\subsubsection{Forward Pass}
+\input{mlp_forward.tex}
+
+\clearpage
+
+\subsubsection{Backward Pass}
+\input{mlp_backward.tex}
+
+\clearpage
+
+\subsubsection{Operations Summary}
+\input{mlp_table.tex}
+
+\clearpage
+
+% ---- 1.5 Output Projection ----
+\subsection{Output Projection \& Loss Computation}
+
+The final layer projects the hidden states to vocabulary logits and computes the cross-entropy loss.
+
+\vspace{1cm}
+
+\subsubsection{Forward Pass}
+\input{output_proj.tex}
+
+\clearpage
+
+\subsubsection{Backward Pass}
+\input{output_proj_backward.tex}
+
+\clearpage
+
+\subsubsection{Operations Summary}
+\input{output_proj_table.tex}
+
+\clearpage
+
+% ============================================================
+% CHAPTER 2: TENSOR PARALLELISM (TP)
+% ============================================================
+\section{Tensor Parallelism (TP)}
+
+\textit{[This chapter will cover Tensor Parallelism implementation details]}
+
+\subsection{TP Overview}
+\textit{[To be added]}
+\input{transformer_overall_flow_TP.tex}
+
+\clearpage
+
+
+\subsection{Forward Pass}
+
+In the tensor-parallel setting, the multi-head attention is distributed across $N_T$ devices (GPUs). The notation used in the diagram is defined as follows:
+\begin{itemize}
+    \item $N_H$: Total number of attention heads (global)
+    \item $N_T$: Tensor parallelism degree (number of devices)
+    \item $N_{HN}$: Number of heads per device (local), where $N_{HN} = \frac{N_H}{N_T}$
+\end{itemize}
+
+Each device processes $N_{HN}$ heads independently. The weight matrices $\widetilde{\mathbf{W}}_Q$, $\widetilde{\mathbf{W}}_K$, $\widetilde{\mathbf{W}}_V$, and $\widetilde{\mathbf{W}}_O$ are column-partitioned across devices, with each device holding a $[D, N_{HN} \cdot D_h]$ slice of the original $[D, D]$ matrix.
+
+
+
+\input{mha_forward_TP.tex}
+
+
+\subsection{Backward Pass}
+\input{mha_backward_TP.tex}
+
+\subsection{Communication Patterns}
+\textit{[To be added]}
+
+\clearpage
+
+\section{Data Parallelism (DP)}
+\subsection{DP Overview}
+
+    \input{transformer_overall_flow_DP.tex}
+
+
+\end{document}
