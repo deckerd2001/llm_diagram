@@ -33,9 +33,9 @@
 \coordinate (R_V_bwd_center) at (5.9, \dVXyoffset+\yoffset);
 \coordinate (dVX_calc_center) at (3.9, \dVXyoffset+\yoffset);
 \coordinate (dQK_calc_Q_center) at (1.7, \yoffset);
-\coordinate (dQK_calc_K_center) at (1.7, -2.0+\yoffset);
+\coordinate (dQK_calc_K_center) at (1.7, -3.3+\yoffset);
 \coordinate (K_BWD_input_center) at (1.7, 1.0+\yoffset);
-\coordinate (T_Q_bwd_center) at (1.7, -3.0+\yoffset);
+\coordinate (T_Q_bwd_center) at (1.7, -4.3+\yoffset);
 
 \node[font=\Large\bfseries] at (8, 4.6+\yoffset) {Multi-Head Attention Backward Pass};
 
@@ -145,11 +145,10 @@
 \draw[gradweight] (R_dK_mid) -- (dKX_proj_calc)
   node[dimlabel, midway, above]{$\mathbf{dK}$\\$[B,S,D]$};
 
-\node[auxnode] (T_WK_bwd) [below=0.45cm of dKX_proj_calc] {T};
-\node[dimlabel] (WK_bwd) [below=0.45cm of T_WK_bwd] {$\widetilde{\mathbf{W}}_{K}$\\$[D,D]$};
+\node[auxnode] (T_WK_bwd) [above=0.55cm of dKX_proj_calc] {T};
+\node[dimlabel] (WK_bwd) [above=0.45cm of T_WK_bwd] {$\widetilde{\mathbf{W}}_{K}$\\$[D,D]$};
 \draw[gradflow] (WK_bwd) -- (T_WK_bwd);
-\draw[flow2] (T_WK_bwd.north) -- (dKX_proj_calc.south)
-  node[dimlabel, midway, left]{$[D,D]$};
+\draw[flow2] (T_WK_bwd.south) -- (dKX_proj_calc.north);
 
 \draw[gradflow] (AS_BWD_for_V.west) -- (T_AS_bwd.east);
 \draw[gradflow] (T_AS_bwd.west) -- (dV_calc.east)
@@ -197,7 +196,7 @@
 \draw[gradweight] (dWQ_mul.west) -- (dWQ_out);
 
 \coordinate (dK_branch) at ($(R_dK_mid)!0.52!(dKX_proj_calc)$);
-\node[mulnode] (dWK_mul) at ($(dK_branch)+(0,-3.0cm)$) {$\bullet$};
+\node[mulnode] (dWK_mul) at ($(dK_branch)+(0,-1.7cm)$) {$\bullet$};
 \draw[flow2]  (dK_branch) -- (dWK_mul.north);
 
 \node[auxnode] (T_XnormK) [right=1.2cm of dWK_mul] {T};

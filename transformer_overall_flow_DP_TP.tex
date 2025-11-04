@@ -1,0 +1,179 @@
+\noindent
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    node distance=2.5cm,
+    >=stealth,
+    block/.style={rectangle, draw=black, fill=white, text width=5em, text centered, rounded corners, minimum height=8em, font=\bfseries},
+    blockstack/.style={rectangle, draw=black!60, fill=white, text width=5em, text centered, rounded corners, minimum height=8em},
+    forward/.style={-{Stealth[length=2mm]}, thick, black},
+    backward/.style={-{Stealth[length=2mm]}, thick, black, densely dashed},
+    tpcomm/.style={{Stealth[length=1.5mm]}-{Stealth[length=1.5mm]}, thick, blue!70, densely dotted},
+    dpcomm/.style={<->, thick, red!70, dashed},
+    io/.style={text centered, font=\bfseries}
+]
+    % Title
+    \node[font=\Large\bfseries] at (10, 14) {Transformer Flow with TP + DP (2 DP replicas × 3 TP GPUs)};
+
+    % ========== DP Replica 0 (Upper) ==========
+    \node[font=\normalsize\bfseries, anchor=west] at (-1, 11.5) {DP Rank 0};
+
+    \node (input_0) [io] at (0, 10) {$\mathbf{X}_0$};
+    \node (encoding_0) [block, right of=input_0, yshift=-3em] {Input\\Encoding};
+
+    % MHA blocks (3 stacked) - TP Group 0
+    \node (mha3_0) [blockstack, right of=encoding_0, xshift=0.3cm, yshift=0.3cm] {};
+    \node (mha2_0) [blockstack, right of=encoding_0, xshift=0.15cm, yshift=0.15cm] {};
+    \node (mha_0) [block, right of=encoding_0] {MHA};
+    \node[font=\tiny, anchor=north east] at (mha_0.north east) {GPU 0};
+
+    % FFN blocks (3 stacked) - TP Group 0
+    \node (mlp3_0) [blockstack, right of=mha_0, xshift=0.3cm, yshift=0.3cm] {};
+    \node (mlp2_0) [blockstack, right of=mha_0, xshift=0.15cm, yshift=0.15cm] {};
+    \node (mlp_0) [block, right of=mha_0] {FFN};
+    \node[font=\tiny, anchor=north east] at (mlp_0.north east) {GPU 0};
+
+    \node (output_0) [block, right of=mlp_0] {Output\\Projection};
+    \node (pred_0) [io, right of=output_0, yshift=3em] {$\mathbf{Y}_0$};
+    \node (loss_0) [align=center, io, right of=output_0] {\small LOSS:\\$\mathcal{L}_0$};
+    \node (gradient_0) [io, right of=output_0, yshift=-3em] {$\mathbf{dY}_0$};
+
+    % Forward arrows - DP Rank 0
+    \draw [forward] (input_0) -- ([yshift=3em]encoding_0.west);
+    \draw [forward] ([yshift=3em]encoding_0.east) -- ([yshift=3em]mha_0.west);
+    \draw [forward] ([yshift=3em]mha_0.east) -- ([yshift=3em]mlp_0.west);
+    \draw [forward] ([yshift=3em]mlp_0.east) -- ([yshift=3em]output_0.west);
+    \draw [forward] ([yshift=3em]output_0.east) -- (pred_0);
+    \draw [forward] (pred_0) -- (loss_0);
+    \draw [backward] (loss_0) -- (gradient_0);
+
+    % Backward arrows - DP Rank 0
+    \draw [backward] (gradient_0) -- ([yshift=-3em]output_0.east);
+    \draw [backward] ([yshift=-3em]output_0.west) -- ([yshift=-3em]mlp_0.east);
+    \draw [backward] ([yshift=-3em]mlp_0.west) -- ([yshift=-3em]mha_0.east);
+    \draw [backward] ([yshift=-3em]mha_0.west) -- ([yshift=-3em]encoding_0.east);
+
+    % TP Communications - DP Rank 0
+    % Forward All-Reduce
+    \draw [tpcomm] (mha_0.north east) -- ([xshift=0.3cm, yshift=0.3cm]mha_0.north east);
+    \node[font=\tiny, blue!70, anchor=south] at ([xshift=0.15cm, yshift=0.35cm]mha_0.north east) {TP all\_reduce(X)};
+
+    \draw [tpcomm] (mlp_0.north east) -- ([xshift=0.3cm, yshift=0.3cm]mlp_0.north east);
+    \node[font=\tiny, blue!70, anchor=south] at ([xshift=0.15cm, yshift=0.35cm]mlp_0.north east) {TP all\_reduce(X)};
+
+    % Backward All-Reduce - dX
+    \draw [tpcomm] ([yshift=-0.2cm]mlp_0.south west) -- ([xshift=0.3cm, yshift=0.1cm]mlp_0.south west);
+    \node[font=\tiny, blue!70, anchor=north] at ([xshift=0.15cm, yshift=-0.25cm]mlp_0.south west) {TP all\_reduce(dX)};
+
+    \draw [tpcomm] ([yshift=-0.2cm]mha_0.south west) -- ([xshift=0.3cm, yshift=0.1cm]mha_0.south west);
+    \node[font=\tiny, blue!70, anchor=north] at ([xshift=0.15cm, yshift=-0.25cm]mha_0.south west) {TP all\_reduce(dX)};
+
+    % Backward All-Gather for gradients - positioned on right side, before DP all-reduce
+    \draw [dpcomm] ([xshift=-0.5cm, yshift=-1.2cm]mlp_0.south east) -- ([xshift=-0.2cm, yshift=-0.9cm]mlp_0.south east);
+    \node[font=\tiny, red!70, anchor=west, align=left] at ([xshift=-0.15cm, yshift=-1.05cm]mlp_0.south east) {(1) TP all\_gather\\$(\nabla W_{\text{up},\text{down}})$};
+
+    \draw [dpcomm] ([xshift=-0.5cm, yshift=-1.2cm]mha_0.south east) -- ([xshift=-0.2cm, yshift=-0.9cm]mha_0.south east);
+    \node[font=\tiny, red!70, anchor=west, align=left] at ([xshift=-0.15cm, yshift=-1.05cm]mha_0.south east) {(1) TP all\_gather\\$(\nabla W_{Q,K,V,O})$};
+
+    % Brace for layer repetition - DP Rank 0
+    \draw[decorate, decoration={brace, amplitude=10pt}]
+        ([yshift=5.0em]mha_0.north west) -- ([xshift=0.3cm, yshift=5.0em]mlp_0.north east)
+        node[midway, above=12pt, font=\normalsize] {$N$ layers};
+
+    % ========== DP Replica 1 (Lower) ==========
+    \node[font=\normalsize\bfseries, anchor=west] at (-1, 5.5) {DP Rank 1};
+
+    \node (input_1) [io] at (0, 4) {$\mathbf{X}_1$};
+    \node (encoding_1) [block, right of=input_1, yshift=-3em] {Input\\Encoding};
+
+    % MHA blocks (3 stacked) - TP Group 1
+    \node (mha3_1) [blockstack, right of=encoding_1, xshift=0.3cm, yshift=0.3cm] {};
+    \node (mha2_1) [blockstack, right of=encoding_1, xshift=0.15cm, yshift=0.15cm] {};
+    \node (mha_1) [block, right of=encoding_1] {MHA};
+    \node[font=\tiny, anchor=north east] at (mha_1.north east) {GPU 3};
+
+    % FFN blocks (3 stacked) - TP Group 1
+    \node (mlp3_1) [blockstack, right of=mha_1, xshift=0.3cm, yshift=0.3cm] {};
+    \node (mlp2_1) [blockstack, right of=mha_1, xshift=0.15cm, yshift=0.15cm] {};
+    \node (mlp_1) [block, right of=mha_1] {FFN};
+    \node[font=\tiny, anchor=north east] at (mlp_1.north east) {GPU 3};
+
+    \node (output_1) [block, right of=mlp_1] {Output\\Projection};
+    \node (pred_1) [io, right of=output_1, yshift=3em] {$\mathbf{Y}_1$};
+    \node (loss_1) [align=center, io, right of=output_1] {\small LOSS:\\$\mathcal{L}_1$};
+    \node (gradient_1) [io, right of=output_1, yshift=-3em] {$\mathbf{dY}_1$};
+
+    % Forward arrows - DP Rank 1
+    \draw [forward] (input_1) -- ([yshift=3em]encoding_1.west);
+    \draw [forward] ([yshift=3em]encoding_1.east) -- ([yshift=3em]mha_1.west);
+    \draw [forward] ([yshift=3em]mha_1.east) -- ([yshift=3em]mlp_1.west);
+    \draw [forward] ([yshift=3em]mlp_1.east) -- ([yshift=3em]output_1.west);
+    \draw [forward] ([yshift=3em]output_1.east) -- (pred_1);
+    \draw [forward] (pred_1) -- (loss_1);
+    \draw [backward] (loss_1) -- (gradient_1);
+
+    % Backward arrows - DP Rank 1
+    \draw [backward] (gradient_1) -- ([yshift=-3em]output_1.east);
+    \draw [backward] ([yshift=-3em]output_1.west) -- ([yshift=-3em]mlp_1.east);
+    \draw [backward] ([yshift=-3em]mlp_1.west) -- ([yshift=-3em]mha_1.east);
+    \draw [backward] ([yshift=-3em]mha_1.west) -- ([yshift=-3em]encoding_1.east);
+
+    % TP Communications - DP Rank 1
+    % Forward All-Reduce
+    \draw [tpcomm] (mha_1.north east) -- ([xshift=0.3cm, yshift=0.3cm]mha_1.north east);
+    \node[font=\tiny, blue!70, anchor=south] at ([xshift=0.15cm, yshift=0.35cm]mha_1.north east) {TP all\_reduce(X)};
+
+    \draw [tpcomm] (mlp_1.north east) -- ([xshift=0.3cm, yshift=0.3cm]mlp_1.north east);
+    \node[font=\tiny, blue!70, anchor=south] at ([xshift=0.15cm, yshift=0.35cm]mlp_1.north east) {TP all\_reduce(X)};
+
+    % Backward All-Reduce - dX
+    \draw [tpcomm] ([yshift=-0.2cm]mlp_1.south west) -- ([xshift=0.3cm, yshift=0.1cm]mlp_1.south west);
+    \node[font=\tiny, blue!70, anchor=north] at ([xshift=0.15cm, yshift=-0.25cm]mlp_1.south west) {TP all\_reduce(dX)};
+
+    \draw [tpcomm] ([yshift=-0.2cm]mha_1.south west) -- ([xshift=0.3cm, yshift=0.1cm]mha_1.south west);
+    \node[font=\tiny, blue!70, anchor=north] at ([xshift=0.15cm, yshift=-0.25cm]mha_1.south west) {TP all\_reduce(dX)};
+
+    % Backward All-Gather for gradients - positioned on right side, before DP all-reduce
+    % \draw [dpcomm] ([xshift=0.5cm, yshift=-1.2cm]mlp_1.south east) -- ([xshift=0.8cm, yshift=-0.9cm]mlp_1.south east);
+    % \node[font=\tiny, red!70, anchor=west, align=left] at ([xshift=0.85cm, yshift=-1.05cm]mlp_1.south east) {(1) TP all\_gather\\$(\nabla W_{\text{up},\text{down}})$};
+
+    % \draw [dpcomm] ([xshift=0.5cm, yshift=-1.2cm]mha_1.south east) -- ([xshift=0.8cm, yshift=-0.9cm]mha_1.south east);
+    % \node[font=\tiny, red!70, anchor=west, align=left] at ([xshift=0.85cm, yshift=-1.05cm]mha_1.south east) {(1) TP all\_gather\\$(\nabla W_{Q,K,V,O})$};
+
+    % ========== DP Communications (Between TP Groups) ==========
+    \draw [dpcomm] (mha_0.south) -- (mha_1.north) node[midway, right, font=\tiny, align=left, red!70] {(2) DP All-Reduce\\$(\nabla W_{Q,K,V,O})$};
+    \draw [dpcomm] (mlp_0.south) -- (mlp_1.north) node[midway, right, font=\tiny, align=left, red!70] {(2) DP All-Reduce\\$(\nabla W_{\text{up},\text{down}})$};
+
+    % Communication Order Annotation
+    \node[font=\scriptsize, align=left, text width=7.5cm, draw=black!30, fill=yellow!10, rounded corners] at ([xshift=15.5cm, yshift=10em]encoding_1.south) {
+        \textbf{Communication in TP+DP:}\\
+        \textbf{Forward:} \textcolor{blue!70}{TP all\_reduce(X)} - sync activations\\
+        \textbf{Backward:}\\
+        \hspace{0.3em}\textcolor{blue!70}{• TP all\_reduce(dX)} - sync activation grads\\
+        \hspace{0.3em}\textcolor{red!70}{• (1) TP all\_gather($\nabla W$)} - collect weight grads\\
+        \hspace{0.6em}within each TP group\\
+        \hspace{0.3em}\textcolor{red!70}{• (2) DP all-reduce($\nabla W$)} - average grads\\
+        \hspace{0.6em}across DP groups\\[0.2em]
+        \textit{Note: (1) must complete before (2)}
+    };
+
+    % Labels (Legend)
+    \coordinate (legend) at ([xshift=11.5cm, yshift=12em]input_0);
+
+    % Forward
+    \draw[forward, -{Stealth[length=1.2mm,width=1.4mm]}, line width=0.3pt] (legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {Forward};
+
+    % Backward
+    \draw[backward, -{Stealth[length=1.2mm,width=1.4mm]}, line width=0.3pt] ([yshift=-0.4cm]legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {Backward};
+
+    % TP Comm
+    \draw[tpcomm, line width=0.3pt] ([yshift=-0.8cm]legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {TP Comm};
+
+    % DP Comm
+    \draw[dpcomm, line width=0.3pt] ([yshift=-1.2cm]legend) -- ++(0.8,0)
+      node[right, font=\scriptsize] {DP Comm};
+
+\end{tikzpicture}%
+}
