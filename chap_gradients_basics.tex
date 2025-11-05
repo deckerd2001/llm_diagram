@@ -1,0 +1,176 @@
+% ==========================================================
+% 3. Gradients and Backpropagation Basics
+% ==========================================================
+\section{Gradients and Backpropagation Basics}
+
+Before we dive into detailed forward and backward diagrams for each
+Transformer block, we review the basic concepts of loss functions,
+gradients, and backpropagation. We focus on an abstract operator view,
+because the diagrams in later sections emphasize tensor flow along edges
+rather than explicit Jacobian matrices.
+
+\subsection{Loss Functions and Gradients}
+
+Training a neural network is formulated as the minimization of a scalar
+\emph{loss function} $L(\theta)$ over parameters~$\theta$. For a batch
+of input--target pairs $(\mathbf{X}, \mathbf{Y}_{\text{targets}})$, we
+compute predictions $\mathbf{Y} = f_{\theta}(\mathbf{X})$ and a scalar
+loss
+\[
+  L
+  \;=\;
+  \mathcal{L}\!\bigl(\mathbf{Y}, \mathbf{Y}_{\text{targets}}\bigr).
+\]
+
+The gradient of $L$ with respect to a parameter vector $\theta$ is
+\[
+  \nabla_{\theta} L
+  =
+  \begin{bmatrix}
+    \dfrac{\partial L}{\partial \theta_1} \\
+    \dfrac{\partial L}{\partial \theta_2} \\
+    \vdots
+  \end{bmatrix},
+\]
+and we use the notation $\mathrm{d}\theta$ and $\mathrm{d}\mathbf{X}$
+for such gradients. For example
+\[
+  \mathrm{d}\mathbf{W}
+  =
+  \frac{\partial L}{\partial \mathbf{W}},
+  \qquad
+  \mathrm{d}\mathbf{X}
+  =
+  \frac{\partial L}{\partial \mathbf{X}}.
+\]
+
+\subsection{Chain Rule and Backward Operators}
+
+Consider a single node in a computation graph with forward computation
+\[
+  \mathbf{y} = f(\mathbf{x}),
+\]
+where $\mathbf{x}$ and $\mathbf{y}$ are vectors or tensors. Let
+$J_f(\mathbf{x})$ denote the Jacobian of $f$ at $\mathbf{x}$. If $L$
+depends on $\mathbf{y}$, the chain rule gives
+\[
+  \mathrm{d}\mathbf{x}
+  =
+  \frac{\partial L}{\partial \mathbf{x}}
+  =
+  J_f(\mathbf{x})^{\mathsf T}
+  \frac{\partial L}{\partial \mathbf{y}}
+  =
+  J_f(\mathbf{x})^{\mathsf T} \,\mathrm{d}\mathbf{y}.
+\]
+
+In the diagrams we do not materialize the Jacobian. Instead we introduce
+an \emph{abstract backward operator} $df$ and write
+\[
+  \mathrm{d}\mathbf{x}
+  =
+  d f(\mathbf{x}, \mathrm{d}\mathbf{y}),
+\]
+with the understanding that
+\[
+  d f(\mathbf{x}, \mathrm{d}\mathbf{y})
+  \;\equiv\;
+  J_f(\mathbf{x})^{\mathsf T}\,\mathrm{d}\mathbf{y}.
+\]
+Thus, conceptually, each backward node in the graph implements the
+mapping
+\[
+  (\mathbf{x}, \mathrm{d}\mathbf{y})
+  \longmapsto
+  \mathrm{d}\mathbf{x}.
+\]
+
+\paragraph{Multiple inputs.}
+
+More generally, many nodes have several inputs:
+\[
+  \mathbf{y}
+  =
+  f(\mathbf{x}_1, \mathbf{x}_2, \dots, \mathbf{x}_k).
+\]
+Given the upstream gradient $\mathrm{d}\mathbf{y}$, the chain rule
+yields gradients with respect to all inputs:
+\[
+  \mathrm{d}\mathbf{x}_i
+  =
+  J_{f, \mathbf{x}_i}(\mathbf{x}_1,\dots,\mathbf{x}_k)^{\mathsf T}
+  \,\mathrm{d}\mathbf{y},
+  \qquad i = 1,\dots,k,
+\]
+where $J_{f, \mathbf{x}_i}$ is the Jacobian of $f$ with respect to
+$\mathbf{x}_i$.
+
+We bundle this into a single backward operator
+\[
+  (\mathrm{d}\mathbf{x}_1, \dots, \mathrm{d}\mathbf{x}_k)
+  =
+  d f(\mathbf{x}_1, \dots, \mathbf{x}_k, \mathrm{d}\mathbf{y}).
+\]
+In the diagrams, this is precisely what nodes such as dS, dSM, dDO, and
+dLN represent: given the forward inputs (or cached forward state) and
+the upstream gradient, they produce gradients for \emph{all} inputs of
+the corresponding forward node.
+
+\subsection{Computation Graph View}
+
+A full Transformer layer can be viewed as a composition
+\[
+  \mathbf{X}_0
+  \xrightarrow{f_1}
+  \mathbf{X}_1
+  \xrightarrow{f_2}
+  \mathbf{X}_2
+  \xrightarrow{\;\cdots\;}
+  \mathbf{X}_L,
+\]
+where $\mathbf{X}_0$ is the input and $\mathbf{X}_L$ is the output
+before the loss. Backpropagation proceeds by visiting nodes in reverse
+topological order and applying the corresponding backward operator:
+\[
+  \mathrm{d}\mathbf{X}_{\ell}
+  =
+  d f_{\ell}(\mathbf{X}_{\ell}, \mathrm{d}\mathbf{X}_{\ell+1}),
+  \qquad \ell = L-1, \dots, 0.
+\]
+
+Matrix multiplication nodes, softmax nodes, dropout nodes, layer
+normalization nodes, and communication nodes (All-Reduce, All-Gather)
+are all special cases of this pattern, each with its own concrete
+backward operator $d f$.
+
+\subsection{Parameter Gradients and Updates}
+
+Parameters such as weight matrices and bias vectors are also inputs to
+some node in the graph. For a matmul
+\[
+  \mathbf{Y} = \mathbf{X}\mathbf{W},
+\]
+we can view the forward as a function of two inputs,
+$f(\mathbf{X}, \mathbf{W}) = \mathbf{Y}$. The corresponding backward
+operator produces both activation and parameter gradients:
+\[
+  (\mathrm{d}\mathbf{X}, \mathrm{d}\mathbf{W})
+  =
+  d f(\mathbf{X}, \mathbf{W}, \mathrm{d}\mathbf{Y}).
+\]
+
+These parameter gradients are then used by an optimizer (SGD, Adam, and
+so on) to update the parameters, for example with stochastic gradient
+descent
+\[
+  \theta^{(t+1)}
+  =
+  \theta^{(t)} - \eta\,\mathrm{d}\theta^{(t)}.
+\]
+
+In the figures, we explicitly draw the edges corresponding to
+$\mathrm{d}\mathbf{W}$ and $\mathrm{d}\mathbf{b}$ for key operators
+(MHA, MLP, output projection). The detailed formulas for each node
+(e.g.\ softmax, scale/mask, layer normalization) are encapsulated by
+their corresponding backward operators and described in the next
+section.

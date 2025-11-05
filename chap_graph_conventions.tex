@@ -1,0 +1,517 @@
+% ==========================================================
+% 4. Graphical Notation and Figure Conventions
+% ==========================================================
+\section{Graphical Notation and Figure Conventions}
+
+All figures in this document are drawn as computational graphs. Before
+we dive into the layer-wise diagrams, we clarify what nodes and edges
+represent, and we summarize the forward and backward behavior of each
+operator.
+
+\subsection{Graph View: Nodes, Edges, and Shapes}
+
+Each diagram can be interpreted as a directed graph:
+
+\begin{itemize}
+  \item \textbf{Nodes} denote operations or transformations applied to
+        tensors. Some nodes perform arithmetic (e.g., matrix
+        multiplication or addition), others only change layout or
+        perform communication.
+  \item \textbf{Edges} denote tensors flowing between nodes. An edge
+        is usually labeled with:
+        \begin{itemize}
+          \item a symbolic name such as
+                \(\mathbf{X}\), \(\mathbf{H}\), \(\mathbf{Q}\),
+                \(\mathbf{K}\), \(\mathbf{V}\), \(\mathbf{AS}\),
+                \(\mathrm{d}\mathbf{X}\), and
+          \item an optional \textbf{shape annotation} in bracket form,
+                for example \([B,S,D]\) or \([B,N_H,S,D_h]\).
+        \end{itemize}
+\end{itemize}
+
+Whenever an edge is annotated with \([B,S,D]\), this is shorthand for a
+tensor of shape \(\mathbb{R}^{B \times S \times D}\). Likewise,
+\([B,N_H,S,D_h]\) corresponds to
+\(\mathbb{R}^{B \times N_H \times S \times D_h}\), and so on.
+
+Forward and backward passes are usually drawn as \emph{separate}
+figures (for example, one for MHA forward and another for MHA backward).
+In the high-level overall-flow figures, forward and backward paths share
+the same diagram; in that case we distinguish them by arrow style, as
+described in Section~\ref{subsec:arrow-styles}.
+
+\subsection{Tensor Shapes and Indices}
+
+We use the following global symbols and dimensions:
+\begin{itemize}
+  \item $B$: global batch size.
+  \item $S$: sequence length (number of tokens).
+  \item $D$: model (hidden) dimension.
+  \item $D_{ff}$: intermediate MLP dimension.
+  \item $N_H$: number of attention heads.
+  \item $D_h$: per-head dimension, typically $D_h = D / N_H$.
+  \item $N_T$: tensor-parallel degree (number of TP shards).
+  \item $N_D$: data-parallel degree (number of DP replicas).
+\end{itemize}
+
+Typical global shapes:
+\begin{itemize}
+  \item $\mathbf{X} \in \mathbb{R}^{B \times S \times D}$:
+        input or hidden states (annotated as \([B,S,D]\)).
+  \item $\mathbf{H} \in \mathbb{R}^{B \times S \times D}$:
+        normalized or intermediate hidden states.
+  \item $\mathbf{Q}, \mathbf{K}, \mathbf{V} \in
+        \mathbb{R}^{B \times N_H \times S \times D_h}$:
+        query, key, value tensors after projection
+        (annotated as \([B,N_H,S,D_h]\)).
+  \item $\mathbf{AS} \in \mathbb{R}^{B \times N_H \times S \times S}$:
+        attention scores or probabilities
+        (annotated as \([B,N_H,S,S]\)).
+  \item $\mathbf{Y} \in \mathbb{R}^{B \times S \times D}$:
+        output of a Transformer block or layer.
+\end{itemize}
+
+In parallel settings we also use \emph{local} views, where the batch or
+hidden dimension is partitioned:
+\begin{itemize}
+  \item Under data parallelism (DP), a single replica processes roughly
+        \([B/N_D,S,D]\).
+  \item Under tensor parallelism (TP), a single shard sees hidden slices
+        such as \([B,S,D/N_T]\) or \([B,N_H,S,D_h/N_T]\).
+\end{itemize}
+
+Gradients are denoted with a leading \(\mathrm{d}\), e.g.\
+\(\mathrm{d}\mathbf{X}\), \(\mathrm{d}\mathbf{W}\),
+\(\mathbf{dA}_{\text{out}}\). The corresponding edges in the diagrams
+use the same symbols together with bracketed shape annotations.
+
+\subsection{Operator Dictionary: Forward and Backward}
+In the detailed diagrams we draw separate nodes for the forward and
+backward versions of an operator. If a forward node computes
+\[
+  \mathbf{y} = f(\mathbf{x}_1, \dots, \mathbf{x}_k),
+\]
+then the corresponding backward node, labeled with a leading ``d''
+(e.g.\ dS, dSM, dDO, dLN), represents the abstract backward operator
+\[
+  (\mathrm{d}\mathbf{x}_1, \dots, \mathrm{d}\mathbf{x}_k)
+  =
+  d f(\mathbf{x}_1, \dots, \mathbf{x}_k, \mathrm{d}\mathbf{y}),
+\]
+as introduced in Section~3. In other words, each dNode takes the
+upstream gradient $\mathrm{d}\mathbf{y}$ and the necessary cached
+forward inputs, and produces gradients for all inputs of the
+corresponding forward node.
+
+\subsubsection{Matrix Multiplication (Matmul)}
+
+\paragraph{Symbol}
+
+\begin{itemize}
+  \item \textbf{Node icon:}
+        \tikz[baseline=-0.5ex]{
+          \node[draw,circle,inner sep=0.7pt]{$\bullet$};
+        }
+        \; (small circle with a dot inside)
+  \item \textbf{Incoming edges:}
+        \begin{itemize}
+          \item Single-line arrow: first operand (usually activations).
+          \item Double-line arrow: second operand (weights or transpose).
+        \end{itemize}
+\end{itemize}
+
+\paragraph{Forward}
+
+For simplicity, consider
+\[
+  \mathbf{Y} = \mathbf{X}\mathbf{W},
+\]
+where
+\(\mathbf{X} \in \mathbb{R}^{B \times d_{\text{in}}}\),
+\(\mathbf{W} \in \mathbb{R}^{d_{\text{in}} \times d_{\text{out}}}\), and
+\(\mathbf{Y} \in \mathbb{R}^{B \times d_{\text{out}}}\). In practice we
+use batched versions in the diagrams (e.g.\ shapes \([B,S,D]\),
+\([D,D]\), or \([B,N_H,S,D_h]\)), but the rule is the same.
+
+\paragraph{Backward}
+
+Given the upstream gradient
+\(\mathrm{d}\mathbf{Y} = \partial L / \partial \mathbf{Y}\),
+the local gradients are
+\[
+  \mathrm{d}\mathbf{X}
+  \;=\;
+  \mathrm{d}\mathbf{Y}\,\mathbf{W}^{\top},
+  \qquad
+  \mathrm{d}\mathbf{W}
+  \;=\;
+  \mathbf{X}^{\top}\,\mathrm{d}\mathbf{Y}.
+\]
+Thus each matmul node in the backward diagrams produces both an
+activation gradient (e.g.\ \(\mathrm{d}\mathbf{X}\)) and a parameter
+gradient (e.g.\ \(\mathrm{d}\widetilde{\mathbf{W}}_{Q}\)).
+
+\subsubsection{Bitwise / Elementwise Addition}
+
+\paragraph{Symbol}
+
+\begin{itemize}
+  \item \textbf{Node icon:}
+        \tikz[baseline=-0.5ex]{
+          \node[draw,circle,inner sep=0.7pt]{$+$};
+        }
+        \; (small circle with a plus sign)
+\end{itemize}
+
+\paragraph{Forward}
+
+For tensors of the same shape,
+\[
+  \mathbf{Y} = \mathbf{A} + \mathbf{B},
+\]
+we add them elementwise: shape\((\mathbf{Y}) = \text{shape}(\mathbf{A}) = \text{shape}(\mathbf{B})\).
+
+\paragraph{Backward}
+
+Given $\mathrm{d}\mathbf{Y}$,
+\[
+  \mathrm{d}\mathbf{A} = \mathrm{d}\mathbf{Y},
+  \qquad
+  \mathrm{d}\mathbf{B} = \mathrm{d}\mathbf{Y}.
+\]
+When one of the inputs is the broadcast of a bias (e.g.\
+$\mathrm{BC}_{B,S}(b_0)$), the gradient with respect to the bias is
+obtained by summing $\mathrm{d}\mathbf{Y}$ over the broadcasted
+dimensions (see BC below).
+
+\subsubsection{Nonlinear and Pointwise Operations (GLU / GELU / ReLU / DO)}
+
+\paragraph{Symbol}
+
+\begin{itemize}
+  \item \textbf{Node icon (generic op):}
+        \tikz[baseline=-0.5ex]{
+          \node[draw,rectangle,inner sep=1.5pt]{\scriptsize OP};
+        }
+        \; (rectangular node with a label)
+\end{itemize}
+
+\paragraph{Forward}
+
+A scalar nonlinearity \(g(\cdot)\) is applied elementwise:
+\[
+  \mathbf{Y} = g(\mathbf{X}),
+\]
+for example GELU, ReLU, or GLU-style gates in the MLP block.
+
+For dropout we use a node labeled \textbf{DO} and write
+\[
+  \mathbf{Y} = \mathrm{DO}(\mathbf{X}; \mathbf{m}),
+\]
+where $\mathbf{m} \in \{0,1\}^{\text{shape}(\mathbf{X})}$ is a binary
+mask cached from the forward pass.
+
+\paragraph{Backward (dGL, dGELU, dReLU, dDO)}
+
+In the backward diagrams we use separate nodes \textbf{dGL}, \textbf{dGELU},
+\textbf{dReLU}, and \textbf{dDO} for the corresponding gradient
+computations. Each such node implements the local mapping
+\[
+  (\mathrm{d}\mathbf{Y}, \mathbf{X}, \text{cache})
+  \;\longmapsto\;
+  \mathrm{d}\mathbf{X}.
+\]
+
+Given $\mathrm{d}\mathbf{Y}$:
+\begin{itemize}
+  \item For a generic nonlinearity $g$ (nodes dGL, dGELU, dReLU):
+        \[
+          \mathrm{d}\mathbf{X}
+          \;=\;
+          \mathrm{d}\mathbf{Y} \odot g'(\mathbf{X}),
+        \]
+        where $\odot$ denotes elementwise multiplication and
+        $\mathbf{X}$ (and possibly $\mathbf{Y}$) is taken from the
+        forward cache.
+
+  \item For dropout (node \textbf{dDO}), using the cached mask
+        $\mathbf{m}$:
+        \[
+          \mathrm{d}\mathbf{X}
+          \;=\;
+          \mathbf{m} \odot \mathrm{d}\mathbf{Y}.
+        \]
+\end{itemize}
+Thus dDO is the operator that takes the upstream gradient on the
+dropped-out activations and re-applies the forward mask to obtain the
+gradient with respect to the pre-dropout tensor.
+
+\subsubsection{Scale/Mask Node (SM)}
+
+\paragraph{Symbol and Labels}
+
+In the MHA diagrams we use a node labeled \textbf{SM} for
+\emph{scale/mask} applied to attention scores, and a corresponding
+backward node labeled \textbf{dSM}.
+
+\paragraph{Forward (SM)}
+
+Given raw attention scores $\mathbf{A}$ (typically from
+$\mathbf{Q}\mathbf{K}^{\top}$), the SM node computes
+\[
+  \mathbf{Z}
+  \;=\;
+  \mathrm{SM}(\mathbf{A})
+  \;=\;
+  \alpha\,\mathbf{A} + \mathbf{M},
+\]
+where $\alpha = 1/\sqrt{D_h}$ is a scalar scaling factor and
+$\mathbf{M}$ encodes the attention mask (e.g.\ large negative values on
+disallowed positions). The shape of $\mathbf{Z}$ is the same as
+$\mathbf{A}$, typically \([B,N_H,S,S]\). The forward pass caches
+$\alpha$ and, implicitly, the mask pattern.
+
+\paragraph{Backward (dSM)}
+
+The node \textbf{dSM} implements the local mapping
+\[
+  (\mathrm{d}\mathbf{Z}, \alpha, \mathbf{M})
+  \;\longmapsto\;
+  \mathrm{d}\mathbf{A}.
+\]
+Since $\mathbf{M}$ is treated as a fixed (non-trainable) mask, the
+gradient with respect to $\mathbf{M}$ is zero, and we obtain
+\[
+  \mathrm{d}\mathbf{A}
+  \;=\;
+  \alpha\,\mathrm{d}\mathbf{Z},
+  \qquad
+  \mathrm{d}\mathbf{M} = 0.
+\]
+In other words, dSM simply rescales the upstream gradient by the same
+factor used in the forward pass and does not propagate gradients into
+the mask.
+
+\subsubsection{Softmax Node (S)}
+
+\paragraph{Symbol and Labels}
+
+We denote the softmax node in attention as \textbf{S}. In backward
+diagrams the corresponding gradient node is labeled \textbf{dS}. Both
+operate on the last dimension of the score tensor.
+
+\paragraph{Forward (S)}
+
+For a fixed batch index, head index, and query position, let
+$\mathbf{z} \in \mathbb{R}^{S}$ be the score vector over keys.
+Softmax produces
+\[
+  \mathbf{p} = \mathrm{softmax}(\mathbf{z}),
+  \qquad
+  p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}.
+\]
+This is applied across all batches and heads, so shapes such as
+\([B,N_H,S,S]\) are preserved. The forward pass typically caches either
+$\mathbf{z}$ or $\mathbf{p}$.
+
+\paragraph{Backward (dS)}
+
+The node \textbf{dS} implements the local mapping
+\[
+  (\mathrm{d}\mathbf{p}, \mathbf{p}) \;\longmapsto\; \mathrm{d}\mathbf{z},
+\]
+applied independently for each $(B, N_H, S)$ context. The Jacobian of
+softmax has entries
+$J_{ij} = p_i(\delta_{ij} - p_j)$, and the gradient is
+\[
+  \mathrm{d}\mathbf{z}
+  \;=\;
+  \mathbf{J}_{\text{softmax}}^{\top}\,\mathrm{d}\mathbf{p}.
+\]
+In implementation, this is realized by the standard softmax backward
+formula; the diagrams encapsulate this behavior in the node labeled
+\textbf{dS}.
+
+\subsubsection{Layer Normalization (LN, dLN)}
+
+\paragraph{Symbols and Labels}
+
+Layer normalization forward nodes are labeled \textbf{LN}, and their
+backward counterparts are labeled \textbf{dLN} in the diagrams.
+
+\paragraph{Forward (LN)}
+
+Layer normalization maps
+$\mathbf{X} \in \mathbb{R}^{B \times S \times D}$ to
+$\mathbf{H} \in \mathbb{R}^{B \times S \times D}$ by normalizing each
+position (across the $D$ dimension) and applying learned scale and shift
+parameters $\gamma, \beta \in \mathbb{R}^{D}$. The forward pass also
+computes and caches per-position mean and variance.
+
+\paragraph{Backward (dLN)}
+
+The node \textbf{dLN} implements the local mapping
+\[
+  (\mathrm{d}\mathbf{H}, \mathbf{X}, \gamma, \text{mean}, \text{var})
+  \;\longmapsto\;
+  (\mathrm{d}\mathbf{X}, \mathrm{d}\gamma, \mathrm{d}\beta).
+\]
+Given the upstream gradient $\mathrm{d}\mathbf{H}$ and the cached
+statistics from LN, standard layer-normalization backward formulas are
+applied to produce:
+\begin{itemize}
+  \item $\mathrm{d}\mathbf{X}$: gradient with respect to the normalized
+        inputs,
+  \item $\mathrm{d}\gamma$: gradient of the scale parameter,
+  \item $\mathrm{d}\beta$: gradient of the shift parameter.
+\end{itemize}
+We do not reproduce the full algebraic expressions here, but the dLN
+node should be understood as the unique operator that recovers these
+three gradients from $\mathrm{d}\mathbf{H}$ and the forward cache.
+
+\subsubsection{Reshape and Transpose (R, T)}
+
+\paragraph{Symbols}
+
+\begin{itemize}
+  \item \textbf{R}: reshape or dimension reordering.
+  \item \textbf{T}: transpose of certain axes.
+\end{itemize}
+
+\paragraph{Forward}
+
+Typical examples in the MHA diagrams include:
+\begin{itemize}
+  \item reshaping between \([B,S,N_H,D_h]\) and \([B,N_H,S,D_h]\),
+  \item transposing between \([B,N_H,S,D_h]\) and \([B,N_H,D_h,S]\),
+  \item transposing \([B,N_H,S,S]\) along its last two axes.
+\end{itemize}
+These nodes do not change the underlying data, only how dimensions are
+arranged.
+
+\paragraph{Backward}
+
+The backward rule simply inverts the layout change: the gradient with
+respect to the input is obtained by reshaping or transposing
+$\mathrm{d}\mathbf{Y}$ with the inverse mapping used in the forward
+pass.
+
+\subsubsection{Broadcast (BC$_{B,S}(b_0)$)}
+
+\paragraph{Notation and Role}
+
+In the diagrams we represent bias broadcast using expressions such as
+\(\mathrm{BC}_{B,S}(b_0)\).
+
+\paragraph{Forward}
+
+Let $b_0 \in \mathbb{R}^{D}$ be a bias vector. The notation
+\(\mathrm{BC}_{B,S}(b_0)\) means that $b_0$ is logically broadcast along
+the batch and sequence dimensions to shape \([B,S,D]\), so that we can
+form
+\[
+  \mathbf{Y} = \mathbf{X} + \mathrm{BC}_{B,S}(b_0),
+  \qquad
+  \mathbf{X} \in [B,S,D].
+\]
+Conceptually this is a view/layout operation; the actual additions are
+performed by the subsequent bitwise adder node.
+
+\paragraph{Backward}
+
+Given $\mathrm{d}\mathbf{Y}$:
+\[
+  \mathrm{d}\mathbf{X} = \mathrm{d}\mathbf{Y},
+  \qquad
+  \mathrm{d}b_0 = \sum_{b=1}^{B} \sum_{s=1}^{S}
+                  \mathrm{d}\mathbf{Y}_{b,s,:}.
+\]
+Thus BC itself has no FLOPs; it only defines how gradients are
+accumulated over broadcasted dimensions.
+
+\subsubsection{Communication Nodes (AR, AG)}
+
+\paragraph{Symbols}
+
+\begin{itemize}
+  \item \textbf{AR}:
+        \tikz[baseline=-0.5ex]{
+          \node[draw,rectangle,inner sep=1.5pt]{\scriptsize AR};
+        }
+        \; (All-Reduce)
+  \item \textbf{AG}:
+        \tikz[baseline=-0.5ex]{
+          \node[draw,rectangle,inner sep=1.5pt]{\scriptsize AG};
+        }
+        \; (All-Gather)
+\end{itemize}
+
+\paragraph{Forward}
+
+\begin{itemize}
+  \item \textbf{All-Reduce (AR)}:
+        each participant starts with a local tensor
+        $\mathbf{X}_{\text{local}}$ (e.g.\ a gradient shard). AR
+        computes a reduction (usually sum or mean) over all participants
+        and returns the reduced tensor to each of them.
+  \item \textbf{All-Gather (AG)}:
+        each participant holds a slice of a larger tensor (e.g.\ a
+        hidden-dimension shard). AG concatenates all slices along the
+        partitioned dimension and makes the full tensor available on
+        every participant.
+\end{itemize}
+Edge annotations such as \([B/N_D,S,D]\) or \([B,S,D/N_T]\) denote the
+payload shape per node or shard.
+
+\paragraph{Backward}
+
+The gradient behavior mirrors the forward operation:
+\begin{itemize}
+  \item For All-Gather, the backward pass scatters the gradient
+        $\mathrm{d}\mathbf{Y}$ back to the corresponding local slices,
+        producing $\mathrm{d}\mathbf{X}_{\text{local}}$ on each shard.
+  \item For All-Reduce with a sum, each participant receives the same
+        $\mathrm{d}\mathbf{Y}$; the local gradient equals this value.
+        If the forward used a mean, an additional scaling factor (e.g.\
+        dividing by the number of participants) is applied.
+\end{itemize}
+
+\subsection{Arrow Styles}
+\label{subsec:arrow-styles}
+
+We use the following arrow styles consistently across the figures:
+
+\begin{itemize}
+  \item \textbf{Single-line solid arrows}:
+        main data flow into a node, typically the first operand of a
+        matrix multiplication or the activation being transformed, e.g.\
+        \tikz[baseline=-0.5ex]{\draw[->,thick] (0,0) -- (1,0);}.
+
+  \item \textbf{Double-line solid arrows}:
+        second operand of a matrix multiplication, usually a weight
+        matrix or a transposed tensor. As a small icon:
+        \tikz[baseline=-0.5ex]{
+          \draw[thick] (0,0) -- (0.8,0);
+          \draw[thick] (0,0.08) -- (0.8,0.08);
+          \draw[->,thick] (0.8,0.04) -- (1.0,0.04);
+        }.
+        In the detailed MHA and MLP diagrams, every matmul node
+        therefore has one single-line and one double-line incoming
+        edge.
+
+  \item \textbf{Dashed arrows}:
+        used \emph{only} in the high-level overall flow figures to
+        indicate backward flow (gradients) along the same path as the
+        forward activations, e.g.\
+        \tikz[baseline=-0.5ex]{\draw[dashed,->,thick] (0,0) -- (1,0);}.
+        In the detailed per-block diagrams, forward and backward passes
+        are drawn as separate figures, so dashed arrows are not reused
+        there.
+\end{itemize}
+
+With this operator dictionary in mind, the subsequent single-node, TP,
+DP, and DP+TP diagrams can be read as explicit execution blueprints:
+each node encodes both its forward computation and its local
+backpropagation rule, and each edge carries a tensor with a clearly
+annotated shape.
+\clearpage
