@@ -1,10 +1,12 @@
 \documentclass{article}
 
+% ------------------------ Packages ------------------------
 \usepackage{amsmath, amssymb}
 \usepackage{tikz}
 \usepackage{graphicx}
 \usepackage{caption}
-\usepackage[margin=1in, landscape]{geometry}
+\usepackage[margin=1in]{geometry} % 전체 문서: portrait
+\usepackage{pdflscape}            % 특정 페이지만 가로(landscape)로
 \usetikzlibrary{shapes, arrows, positioning, fit, calc}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, decorations.pathreplacing}
 
@@ -15,90 +17,376 @@
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0pt}
 
+% ------------------------ Document ------------------------
 \begin{document}
 
-% Title Page
-\begin{center}
-    \vspace*{3cm}
-    {\Huge\bfseries Transformer Architecture\\[0.5cm]
-    Implementation Details}\\[2cm]
-    {\Large Forward \& Backward Pass Analysis}\\[1cm]
-    {\large with Tensor Parallelism}\\[3cm]
-    \today
-\end{center}
+\title{Transformer Parallelism:\\
+       A Visual, Dimension-Oriented Guide}
+\author{}
+\date{November 4, 2025}
+\maketitle
 
-\clearpage
-
-% Table of Contents
 \tableofcontents
+\clearpage
+
+% ==========================================================
+% 1. Neural Network Basics
+% ==========================================================
+\section{Neural Network Basics}
+
+In this section, we briefly introduce the core ideas of neural networks
+for readers with no prior background. We cover the notion of tensors,
+linear layers, activation functions, and the backpropagation algorithm
+at a high level.
+
+\subsection{What is a Neural Network?}
+Here we describe the basic idea of a neural network as a composition of
+linear transformations and non-linear activation functions, operating
+on vector or matrix inputs.
+
+\subsection{Fully-Connected Layers and MLPs}
+We introduce the multi-layer perceptron (MLP):
+\begin{itemize}
+  \item Input/output shapes $[B, D]$.
+  \item Linear layer $W \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}}$,
+        bias $b \in \mathbb{R}^{D_{\text{out}}}$.
+  \item Activation functions such as ReLU or GELU.
+\end{itemize}
+This provides the foundation for understanding the Transformer MLP block.
+
+\subsection{Backpropagation at a Glance}
+We explain the key idea of backpropagation:
+\begin{itemize}
+  \item Gradients flowing from the loss to earlier layers.
+  \item Parameter updates using optimizers such as SGD or Adam.
+\end{itemize}
+The detailed backward diagrams in later sections are concrete instances
+of this general principle.
 
 \clearpage
 
-% ============================================================
-% CHAPTER 1: SINGLE NODE TRANSFORMER
-% ============================================================
-\section{Single Node Transformer}
+% ==========================================================
+% 2. From Neural Networks to Transformers
+% ==========================================================
+\section{From Neural Networks to Transformers}
 
-This chapter covers the complete forward and backward pass of a Transformer model running on a single node (no parallelism).
+\subsection{Sequence Modeling Motivation}
+We consider sequence modeling tasks such as natural language processing,
+time series forecasting, and speech processing. In these settings the
+input is not a single vector but a \emph{sequence} of tokens, each of
+which is mapped to an embedding. The model must capture dependencies
+both between nearby tokens and between tokens that are far apart in
+the sequence.
+
+\subsection{The Self-Attention Idea}
+Transformers address sequence modeling by using self-attention instead
+of explicit recurrence. At a high level:
+\begin{itemize}
+  \item Each token is mapped to an input embedding.
+  \item Self-attention allows every position to attend to every other
+        position in the same sequence.
+  \item Multi-head attention (MHA) uses several attention ``heads'' in
+        parallel to capture different types of relationships.
+  \item A position-wise feed-forward network (MLP block) processes each
+        token independently after attention.
+  \item Layer normalization, residual connections, and an output
+        projection tie the blocks together and produce final logits or
+        predictions.
+\end{itemize}
+
+In the following sections we make these ideas concrete using
+dimension-annotated diagrams of a Transformer layer and its parallel
+variants.
 
 \clearpage
 
-% ---- 1.1 Overview ----
-\subsection{Overall Architecture \& Data Flow}
+% ==========================================================
+% 3. Notation and Diagram Conventions
+% ==========================================================
+\section{Notation and Diagram Conventions}
 
-The following diagram shows the high-level architecture of a Transformer layer, including both forward and backward passes.
+Before diving into layer-wise forward and backward diagrams, we summarize
+the notational conventions and visual elements used throughout the paper.
+All later figures (single-node, TP, DP, and DP+TP overall flow) follow
+these conventions.
 
-\vspace{1cm}
+\subsection{Tensor Shapes, Indices, and Local Views}
 
+We use the following global symbols and dimensions:
+\begin{itemize}
+  \item $B$: global batch size.
+  \item $S$: sequence length (number of tokens).
+  \item $D$: model (hidden) dimension.
+  \item $D_{ff}$: intermediate MLP dimension.
+  \item $N_H$: number of attention heads.
+  \item $D_h$: per-head dimension, typically $D_h = D / N_H$.
+  \item $N_T$: tensor-parallel degree (number of TP shards).
+  \item $N_D$: data-parallel degree (number of DP replicas).
+\end{itemize}
+
+In formulas we write, for example,
+\(\mathbf{X} \in \mathbb{R}^{B \times S \times D}\), while in the diagrams
+we annotate edges with a compact bracket notation such as \([B,S,D]\).
+Throughout the figures we use:
+\begin{itemize}
+  \item \([B,S,D]\) \(\;\leftrightarrow\;\)
+        \(\mathbb{R}^{B \times S \times D}\)
+  \item \([B,N_H,S,D_h]\) \(\;\leftrightarrow\;\)
+        \(\mathbb{R}^{B \times N_H \times S \times D_h}\)
+  \item \([B,N_H,S,S]\) \(\;\leftrightarrow\;\)
+        \(\mathbb{R}^{B \times N_H \times S \times S}\)
+\end{itemize}
+
+In parallel settings we also show \emph{local} shapes from the point of
+view of a single node or shard:
+\begin{itemize}
+  \item Data parallel (DP): each replica processes a fraction of the batch,
+        with local tensors of shape approximately \([B/N_D,S,D]\).
+  \item Tensor parallel (TP): hidden or head dimensions are partitioned
+        across shards, leading to shapes such as
+        \([B,S,D/N_T]\) or \([B,N_H,S,D_h/N_T]\).
+\end{itemize}
+
+Thus edge labels such as \([B/N_D,S,D/N_T]\) should be read as
+“the tensor shape seen by a single node or shard”.
+
+Typical tensor shapes used in the figures:
+\begin{itemize}
+  \item $\mathbf{X} \in \mathbb{R}^{B \times S \times D}$:
+        input or hidden states (annotated as \([B,S,D]\) on edges).
+  \item $\mathbf{H} \in \mathbb{R}^{B \times S \times D}$:
+        normalized or intermediate hidden states.
+  \item $\mathbf{Q}, \mathbf{K}, \mathbf{V} \in \mathbb{R}^{B \times N_H \times S \times D_h}$:
+        query, key, value tensors after projection
+        (annotated as \([B,N_H,S,D_h]\)).
+  \item $\mathbf{AS} \in \mathbb{R}^{B \times N_H \times S \times S}$:
+        attention scores after scaling and softmax
+        (annotated as \([B,N_H,S,S]\)).
+  \item $\mathbf{Y} \in \mathbb{R}^{B \times S \times D}$:
+        output of a Transformer block or layer.
+\end{itemize}
+
+Gradients are denoted by a leading \(\mathrm{d}\), e.g.\
+\(\mathrm{d}\mathbf{X}\), \(\mathrm{d}\mathbf{W}\),
+or \(\mathbf{dA}_{\text{out}}\). In the diagrams we use the same symbols
+but typically omit the explicit set notation.
+
+\subsection{Computation Nodes and Local Operations}
+
+All single-node, TP, DP, and DP+TP figures share the same visual
+vocabulary for computation nodes.
+
+\paragraph{Matrix multiplication (matmul)}
+\begin{itemize}
+  \item Symbol: \textbf{circle containing ``\(\bullet\)''} (denoted
+        \verb|mulnode| in TikZ).
+  \item Meaning: linear operations of the form
+        \(\mathbf{A}\mathbf{W}\) or \(\mathbf{W}^{T}\mathbf{A}\).
+  \item Examples:
+        \begin{itemize}
+          \item MHA Q/K/V projections:
+                \(\mathbf{Q} = \mathbf{X}_{\text{norm}}\widetilde{\mathbf{W}}_{Q}\),
+                \(\mathbf{K} = \mathbf{X}_{\text{norm}}\widetilde{\mathbf{W}}_{K}\),
+                \(\mathbf{V} = \mathbf{X}_{\text{norm}}\widetilde{\mathbf{W}}_{V}\).
+          \item MLP up/down projections:
+                \(\mathbf{H}_{\text{inter}} = \mathbf{H}\widetilde{\mathbf{W}}_{up}\),
+                \(\mathbf{Y} = \mathbf{H}_{\text{inter}}\widetilde{\mathbf{W}}_{down}\).
+        \end{itemize}
+\end{itemize}
+
+\paragraph{Elementwise (bitwise) addition}
+\begin{itemize}
+  \item Symbol: \textbf{circle containing ``$+$''} (denoted
+        \verb|addnode|).
+  item Meaning: elementwise addition of tensors with the same shape.
+  \item Typical usage:
+        \begin{itemize}
+          \item bias addition: \(\mathbf{Z} + \mathbf{b}\),
+          \item residual connections:
+                \(\mathbf{X} + \mathrm{Block}(\mathbf{X})\),
+          \item summing multiple gradient contributions:
+                \(\mathbf{dX} = \mathbf{dX}_1 + \mathbf{dX}_2 + \dots\).
+        \end{itemize}
+\end{itemize}
+
+\paragraph{Nonlinear and pointwise operations}
+\begin{itemize}
+  \item Symbol: \textbf{rectangular node} (often \verb|auxnode|).
+  \item Representative labels:
+        \begin{itemize}
+          \item \texttt{Softmax}, \texttt{dSM}, \texttt{dS}:
+                softmax on attention scores and its backward pass.
+          \item \texttt{GLU}, \texttt{GELU}, \texttt{ReLU},
+                \texttt{dGL}: MLP nonlinearities and their backward passes.
+          \item \texttt{LN}, \texttt{dLN}: layer normalization forward / backward.
+          \item \texttt{DO}: dropout forward / backward.
+        \end{itemize}
+  \item These operators act pointwise (or per feature) and typically
+        preserve the overall tensor shape.
+\end{itemize}
+
+\paragraph{Broadcast (BC)}
+\begin{itemize}
+  \item Symbol: rectangular node labeled \texttt{BC}.
+  \item Meaning: broadcasting a lower-rank tensor along one or more
+        dimensions so that it can be added elementwise to a higher-rank
+        tensor. A common example is broadcasting a bias
+        \(\mathbf{b} \in \mathbb{R}^{D}\) to match a tensor of shape
+        \([B,S,D]\).
+\end{itemize}
+
+\paragraph{Summation over batch/sequence}
+\begin{itemize}
+  \item Symbol: \textbf{small circle containing ``\(\sum\)''}
+        (denoted \verb|sumnode|).
+  \item Meaning: explicit summation over specified axes, typically
+        batch and sequence.
+  \item Typical use: computing bias gradients such as
+        \(\mathrm{d}\tilde{\mathbf{b}} = \sum_{B,S} \mathrm{d}\mathbf{Z}\).
+\end{itemize}
+
+\paragraph{Reshape and transpose}
+\begin{itemize}
+  \item \textbf{R}:
+        reshape or dimension reordering operator.
+        For example, switching between
+        \([B,S,N_H,D_h]\) and \([B,N_H,S,D_h]\).
+  \item \textbf{T}:
+        transpose operator, often exchanging the last two dimensions,
+        e.g.\ \([B,N_H,S,D_h] \rightarrow [B,N_H,D_h,S]\).
+\end{itemize}
+
+\subsection{Parallel Groups and Node-Level View}
+
+The DP, TP, and DP+TP overall flow figures show not only layer-internal
+operations but also the structure across nodes and shards.
+
+\begin{itemize}
+  \item \textbf{Data-parallel replicas}:
+        nodes labeled ``Node 0'', ``Node 1'', \dots, ``Node $N_D-1$''
+        form a DP group. Each replica holds a full copy of the model
+        parameters but processes a different slice of the batch.
+        Local tensors are typically annotated as \([B/N_D,S,D]\).
+  \item \textbf{Tensor-parallel shards}:
+        within a node (or within a TP group) weight matrices or hidden
+        dimensions are split across \(N_T\) shards.
+        Local hidden states may be annotated as \([B,S,D/N_T]\) or
+        \([B,N_H,S,D_h/N_T]\).
+  \item \textbf{Hybrid DP+TP}:
+        in the DP+TP overall flow, each data-parallel replica contains
+        a tensor-parallel group. TP communication happens inside each
+        replica, while DP communication happens across replicas.
+\end{itemize}
+
+\subsection{Arrow Styles, Communication, and Cost Annotations}
+
+\paragraph{Activation and gradient flow}
+\begin{itemize}
+  \item \textbf{Solid arrows}:
+        forward activations (e.g.\ \(\mathbf{X} \rightarrow \mathbf{H}\)).
+  \item \textbf{Dashed arrows}:
+        backward gradients (e.g.\ \(\mathrm{d}\mathbf{Y} \rightarrow \mathrm{d}\mathbf{X}\)).
+  \item \textbf{Double arrows}:
+        reuse of cached tensors from the forward pass, such as weights
+        or attention scores read again during the backward pass.
+\end{itemize}
+
+\paragraph{Collective communication (AR / AG)}
+
+Tensor-parallel (e.g.\ MHA backward under TP) and data-parallel
+(e.g.\ DP and DP+TP overall flow) figures contain explicit collective
+communication nodes:
+
+\begin{itemize}
+  \item \textbf{AR} (All-Reduce): rectangular node labeled \texttt{AR}.
+        All nodes in a group exchange local tensors, compute a global
+        reduction (typically sum or mean), and receive the reduced
+        result. For example, shard-wise weight gradients
+        \(\mathbf{d}\widetilde{\mathbf{W}}_{Q}^{(t)}\) are all-reduced
+        to form the global gradient.
+  \item \textbf{AG} (All-Gather): rectangular node labeled \texttt{AG}.
+        Each shard contributes a slice of a tensor; the full tensor is
+        reconstructed by concatenation and made available to all shards.
+        A typical example is gathering TP-partitioned hidden states or
+        attention outputs.
+\end{itemize}
+
+\paragraph{DP vs TP communication in DP+TP overall flow}
+
+In the DP+TP overall flow diagram we distinguish carefully between
+data-parallel and tensor-parallel communication:
+
+\begin{itemize}
+  \item \textbf{DP communication}:
+        All-Reduce across data-parallel replicas, usually for weight
+        gradients. Edge annotations may show both the local payload
+        shape and an algorithm-dependent cost, e.g.
+        \[
+          \text{Naive: } 2(N_D - 1) \times [B/N_D,S,D],\quad
+          \text{Ring: } 2\frac{N_D - 1}{N_D} \times [B/N_D,S,D].
+        \]
+  \item \textbf{TP communication}:
+        All-Reduce or All-Gather across tensor-parallel shards inside
+        a node or TP group, with shapes such as \([B,S,D/N_T]\) or
+        \([B,N_H,S,D_h/N_T]\).
+\end{itemize}
+
+In all cases, the bracket notation on communication edges (for example
+\([B,S,D]\) or \([B/N_D,S,D/N_T]\)) indicates the shape of the tensor
+sent or received by a \emph{single} node or shard. This makes it
+possible to reason about the communication volume and compare DP, TP,
+and DP+TP schemes in a consistent way.
+
+\clearpage
+
+% ==========================================================
+% 4. Single-Node Transformer: Forward and Backward
+% ==========================================================
+\section{Single-Node Transformer: Forward and Backward}
+
+This section presents the full Transformer layer running on a single node
+(no parallelism). We emphasize tensor shapes and data flow for both
+forward and backward passes.
+
+\subsection{Overall Transformer Layer Flow}
 \input{transformer_overall_flow.tex}
 
 \clearpage
 
-% ---- 1.2 Input Embedding ----
+% ------------------------ 4.1 Input Embedding ------------------------
 \subsection{Input Embedding Layer}
-
-The input embedding layer converts token indices into dense vector representations and adds positional encodings.
-
-\vspace{1cm}
 
 \subsubsection{Forward Pass}
 \input{input_embedding.tex}
 
 \clearpage
 
-\subsubsection{Operations Summary}
-\input{input_embedding_table.tex}
-
 \clearpage
 
-% ---- 1.3 Multi-Head Attention ----
+% ------------------------ 4.2 Multi-Head Attention -------------------
 \subsection{Multi-Head Attention (MHA)}
 
-Multi-Head Attention enables the model to jointly attend to information from different representation subspaces.
-
-\vspace{1cm}
+Multi-Head Attention enables the model to jointly attend to information
+from different representation subspaces.
 
 \subsubsection{Forward Pass}
-\input{mha_forward.tex}
 
+\begin{landscape}
+\thispagestyle{fancy}
+\input{mha_forward.tex}
+\end{landscape}
 \clearpage
 
 \subsubsection{Backward Pass}
+
+\begin{landscape}
+\thispagestyle{fancy}
 \input{mha_backward.tex}
-
+\end{landscape}
 \clearpage
 
-\subsubsection{Operations Summary}
-\input{mha_table.tex}
-
-\clearpage
-
-% ---- 1.4 Feed-Forward Network ----
-\subsection{Feed-Forward Network (FFN/MLP)}
-
-The FFN consists of two linear transformations with a non-linear activation function in between.
-
-\vspace{1cm}
+% ------------------------ 4.3 MLP / FFN Block ------------------------
+\subsection{Feed-Forward Network (MLP / FFN)}
 
 \subsubsection{Forward Pass}
 \input{mlp_forward.tex}
@@ -110,19 +398,10 @@ The FFN consists of two linear transformations with a non-linear activation func
 
 \clearpage
 
-\subsubsection{Operations Summary}
-\input{mlp_table.tex}
+% ------------------------ 4.4 Output Projection & Loss ---------------
+\subsection{Output Projection and Loss}
 
-\clearpage
-
-% ---- 1.5 Output Projection ----
-\subsection{Output Projection \& Loss Computation}
-
-The final layer projects the hidden states to vocabulary logits and computes the cross-entropy loss.
-
-\vspace{1cm}
-
-\subsubsection{Forward Pass}
+\subsubsection{Forward Pass (Logits, Softmax, Loss)}
 \input{output_proj.tex}
 
 \clearpage
@@ -132,77 +411,105 @@ The final layer projects the hidden states to vocabulary logits and computes the
 
 \clearpage
 
-\subsubsection{Operations Summary}
-\input{output_proj_table.tex}
-
-\clearpage
-
-% ============================================================
-% CHAPTER 2: TENSOR PARALLELISM (TP)
-% ============================================================
+% ==========================================================
+% 5. Tensor Parallelism (TP)
+% ==========================================================
 \section{Tensor Parallelism (TP)}
 
-\textit{[This chapter will cover Tensor Parallelism implementation details]}
+In tensor parallelism, weight matrices are partitioned across multiple
+devices along certain dimensions. Each device computes on its own shard,
+and collective operations (e.g., All-Reduce, All-Gather) synchronize
+intermediate results.
 
-\subsection{TP Overview}
-\textit{[To be added]}
+\subsection{TP Overview and End-to-End Flow}
 \input{transformer_overall_flow_TP.tex}
 
 \clearpage
 
+\subsection{MHA with Tensor Parallelism}
 
-\subsection{Forward Pass}
+\subsubsection{Forward Pass}
 
-In the tensor-parallel setting, the multi-head attention is distributed across $N_T$ devices (GPUs). The notation used in the diagram is defined as follows:
-\begin{itemize}
-    \item $N_H$: Total number of attention heads (global)
-    \item $N_T$: Tensor parallelism degree (number of devices)
-    \item $N_{HN}$: Number of heads per device (local), where $N_{HN} = \frac{N_H}{N_T}$
-\end{itemize}
-
-Each device processes $N_{HN}$ heads independently. The weight matrices $\widetilde{\mathbf{W}}_Q$, $\widetilde{\mathbf{W}}_K$, $\widetilde{\mathbf{W}}_V$, and $\widetilde{\mathbf{W}}_O$ are column-partitioned across devices, with each device holding a $[D, N_{HN} \cdot D_h]$ slice of the original $[D, D]$ matrix.
-
-
-
+\begin{landscape}
+\thispagestyle{fancy}
 \input{mha_forward_TP.tex}
+\end{landscape}
+\clearpage
 
+\subsubsection{Backward Pass}
 
-\subsection{MHA Backward Pass}
+\begin{landscape}
+\thispagestyle{fancy}
 \input{mha_backward_TP.tex}
+\end{landscape}
+\clearpage
 
+\subsection{MLP with Tensor Parallelism}
 
-\subsection{MLP Forward Pass}
-    \input{mlp_forward_TP.tex}
-
-
-\subsection{MLP Backward Pass}
-    \input{mlp_backward_TP.tex}
-
-
-\subsection{Communication Patterns}
-\textit{[To be added]}
+\subsubsection{Forward Pass}
+\input{mlp_forward_TP.tex}
 
 \clearpage
 
+\subsubsection{Backward Pass}
+\input{mlp_backward_TP.tex}
+
+\clearpage
+
+% ==========================================================
+% 6. Data Parallelism (DP)
+% ==========================================================
 \section{Data Parallelism (DP)}
-\subsection{DP Overview}
 
-    \input{transformer_overall_flow_DP.tex}
+In data parallelism, each replica holds a full copy of the model, but
+processes a different subset of the batch. Gradients are synchronized
+across replicas via All-Reduce.
 
-\subsection{MHA Forward Pass}
+\subsection{DP Overview and Transformer Flow}
+\input{transformer_overall_flow_DP.tex}
 
+\clearpage
 
-\subsection{MHA Backward Pass}
-    \input{mha_backward_DP.tex}
+\subsection{MHA Backward under DP}
+\input{mha_backward_DP.tex}
 
+\clearpage
 
-\subsection{MLP Forward Pass}
+\subsection{MLP Backward under DP}
+\input{mlp_backward_DP.tex}
 
-\subsection{Mlp Backward Pass}
-    \input{mlp_backward_DP.tex}
+\clearpage
 
-\section{Data Parallelism (DP) + Tensor Parallelism (TP)}
-\subsection{DP + TP Overview}
-    \input{transformer_overall_flow_DP_TP.tex}
+% ==========================================================
+% 7. Hybrid Data + Tensor Parallelism (DP + TP)
+% ==========================================================
+\section{Hybrid Data + Tensor Parallelism (DP + TP)}
+
+We combine tensor parallelism within each node (or group of devices)
+with data parallelism across groups. This section explains how the two
+forms of parallelism interact in both forward and backward passes.
+
+\subsection{DP+TP Overview and Communication Patterns}
+\input{transformer_overall_flow_DP_TP.tex}
+
+\clearpage
+
+% ==========================================================
+% 8. Summary and Practical Takeaways
+% ==========================================================
+\section{Summary and Practical Takeaways}
+
+We summarize the main ideas:
+\begin{itemize}
+  \item How a Transformer layer operates as a composition of
+        embedding, MHA, MLP, and output projection blocks.
+  \item How tensor shapes evolve through forward and backward passes.
+  \item How single-node execution extends to tensor parallelism, data
+        parallelism, and their combination.
+\end{itemize}
+
+We also highlight how these diagrams can be used as a reference when
+designing or debugging large-scale Transformer training and inference
+systems.
 
 \end{document}
