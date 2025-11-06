@@ -7,78 +7,57 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Sequence Modeling Motivation}{4}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.2}The Self-Attention Idea}{4}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {3}Gradients and Backpropagation Basics}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Loss Functions and Gradients}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Chain Rule and Backward Operators}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Multiple inputs.}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Computation Graph View}{6}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Parameter Gradients and Updates}{6}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Graphical Notation and Figure Conventions}{6}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Graph View: Nodes, Edges, and Shapes}{6}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Tensor Shapes and Indices}{7}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Operator Dictionary: Forward and Backward}{7}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Matrix Multiplication (Matmul)}{7}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbol}{7}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}Bitwise / Elementwise Addition}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbol}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.3}Nonlinear and Pointwise Operations (GLU / GELU / ReLU / DO)}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbol}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward (dGL, dGELU, dReLU, dDO)}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.4}Scale/Mask Node (SM)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbol and Labels}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward (SM)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward (dSM)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.5}Softmax Node (S)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward (S)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward (dS)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.6}Layer Normalization (LN, dLN)}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbols and Labels}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward (LN)}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward (dLN)}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.7}Reshape and Transpose (R, T)}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbols}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.8}Broadcast (BC$_{B,S}(b_0)$)}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Notation and Role}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.9}Communication Nodes (AR, AG)}{11}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Symbols}{11}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Forward}{11}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Backward}{11}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Arrow Styles}{11}{}\protected@file@percent }
-\newlabel{subsec:arrow-styles}{{4.4}{11}{}{}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Single-Node Transformer: Forward and Backward}{12}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Overall Transformer Layer Flow}{12}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Input Embedding Layer}{13}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Forward Pass}{13}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Multi-Head Attention (MHA)}{14}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.1}Forward Pass}{14}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.2}Backward Pass}{16}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Feed-Forward Network (MLP / FFN)}{18}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.1}Forward Pass}{18}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.2}Backward Pass}{19}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Output Projection and Loss}{20}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.1}Forward Pass (Logits, Softmax, Loss)}{20}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.2}Backward Pass}{21}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Tensor Parallelism (TP)}{22}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}TP Overview and End-to-End Flow}{22}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MHA with Tensor Parallelism}{23}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.1}Forward Pass}{23}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.2}Backward Pass}{25}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}MLP with Tensor Parallelism}{27}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.1}Forward Pass}{27}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.2}Backward Pass}{28}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Data Parallelism (DP)}{29}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}DP Overview and Transformer Flow}{29}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}MHA Backward under DP}{30}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}MLP Backward under DP}{31}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Hybrid Data + Tensor Parallelism (DP + TP)}{32}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}DP+TP Overview and Communication Patterns}{32}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {9}Summary and Practical Takeaways}{33}{}\protected@file@percent }
-\gdef \@abspage@last{33}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Scalar Loss and Gradient Notation}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Single-Input Nodes and Backward Operators}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Nodes with Multiple Inputs}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Computation Graph and Backpropagation}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Parameter Gradients and Updates}{8}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Connection to the Diagrams}{8}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Graphical Notation and Figure Conventions}{9}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Tensor Shapes and Index Notation}{9}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Nodes, Edges, and Arrow Styles}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Forward vs. Backward Arrows}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Node Types}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Matrix multiplication.}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Addition and residuals.}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Generic rectangular operators.}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Communication nodes.}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Forward and Backward Nodes: Abstract View}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Operator Dictionary: Forward and Backward}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.1}Matrix Multiplication (Matmul)}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.2}Broadcast (BC)}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.3}Scale/Mask Node (SM, dSM)}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.4}Softmax Node (S, dS)}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.5}Nonlinearities and Dropout (GL, dGL, DO, dDO)}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.6}Layer Normalization (LN, dLN)}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.7}Communication Nodes (AR, AG)}{14}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Reading the Detailed MHA and MLP Figures}{14}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Single-Node Transformer: Forward and Backward}{14}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Overall Transformer Layer Flow}{15}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Input Embedding Layer}{16}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Forward Pass}{16}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Multi-Head Attention (MHA)}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.1}Forward Pass}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.2}Backward Pass}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Feed-Forward Network (MLP / FFN)}{21}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.1}Forward Pass}{21}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.2}Backward Pass}{22}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Output Projection and Loss}{23}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.1}Forward Pass (Logits, Softmax, Loss)}{23}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.2}Backward Pass}{24}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Tensor Parallelism (TP)}{25}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}TP Overview and End-to-End Flow}{25}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MHA with Tensor Parallelism}{26}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.1}Forward Pass}{26}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.2}Backward Pass}{28}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}MLP with Tensor Parallelism}{30}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.1}Forward Pass}{30}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.2}Backward Pass}{31}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Data Parallelism (DP)}{32}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}DP Overview and Transformer Flow}{32}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}MHA Backward under DP}{33}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}MLP Backward under DP}{34}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Hybrid Data + Tensor Parallelism (DP + TP)}{35}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}DP+TP Overview and Communication Patterns}{35}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Summary and Practical Takeaways}{36}{}\protected@file@percent }
+\gdef \@abspage@last{36}
