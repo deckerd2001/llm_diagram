@@ -294,43 +294,40 @@ the mask.
 
 \subsubsection{Softmax Node (S)}
 
-\paragraph{Symbol and Labels}
-
-We denote the softmax node in attention as \textbf{S}. In backward
-diagrams the corresponding gradient node is labeled \textbf{dS}. Both
-operate on the last dimension of the score tensor.
-
 \paragraph{Forward (S)}
 
 For a fixed batch index, head index, and query position, let
-$\mathbf{z} \in \mathbb{R}^{S}$ be the score vector over keys.
-Softmax produces
+$\mathbf{z} \in \mathbb{R}^{S}$ be the score vector over keys. The node
+\textbf{S} computes
 \[
   \mathbf{p} = \mathrm{softmax}(\mathbf{z}),
   \qquad
   p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}.
 \]
 This is applied across all batches and heads, so shapes such as
-\([B,N_H,S,S]\) are preserved. The forward pass typically caches either
-$\mathbf{z}$ or $\mathbf{p}$.
+\([B,N_H,S,S]\) are preserved. The forward pass typically caches
+$\mathbf{p}$ (or $\mathbf{z}$).
 
 \paragraph{Backward (dS)}
 
-The node \textbf{dS} implements the local mapping
-\[
-  (\mathrm{d}\mathbf{p}, \mathbf{p}) \;\longmapsto\; \mathrm{d}\mathbf{z},
-\]
-applied independently for each $(B, N_H, S)$ context. The Jacobian of
-softmax has entries
-$J_{ij} = p_i(\delta_{ij} - p_j)$, and the gradient is
+The backward node \textbf{dS} is the concrete instance of the abstract
+operator $d f$ for $f = \mathrm{softmax}$. It implements
 \[
   \mathrm{d}\mathbf{z}
-  \;=\;
-  \mathbf{J}_{\text{softmax}}^{\top}\,\mathrm{d}\mathbf{p}.
+  =
+  dS(\mathbf{z}, \mathrm{d}\mathbf{p}),
 \]
-In implementation, this is realized by the standard softmax backward
-formula; the diagrams encapsulate this behavior in the node labeled
-\textbf{dS}.
+which, in terms of the Jacobian of softmax, is
+\[
+  dS(\mathbf{z}, \mathrm{d}\mathbf{p})
+  =
+  J_{\text{softmax}}(\mathbf{z})^{\mathsf T}\,\mathrm{d}\mathbf{p}.
+\]
+In practice this is computed using the standard softmax backward
+formula; the diagrams treat dS as a single node whose input edges carry
+$\mathbf{p}$ (or $\mathbf{z}$) and $\mathrm{d}\mathbf{p}$, and whose
+output edge carries $\mathrm{d}\mathbf{z}$.
+
 
 \subsubsection{Layer Normalization (LN, dLN)}
 

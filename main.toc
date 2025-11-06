@@ -32,7 +32,6 @@
 \contentsline {paragraph}{Forward (SM)}{9}{}%
 \contentsline {paragraph}{Backward (dSM)}{9}{}%
 \contentsline {subsubsection}{\numberline {4.3.5}Softmax Node (S)}{9}{}%
-\contentsline {paragraph}{Symbol and Labels}{9}{}%
 \contentsline {paragraph}{Forward (S)}{9}{}%
 \contentsline {paragraph}{Backward (dS)}{9}{}%
 \contentsline {subsubsection}{\numberline {4.3.6}Layer Normalization (LN, dLN)}{9}{}%
