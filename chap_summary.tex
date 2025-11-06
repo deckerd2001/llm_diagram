@@ -1,0 +1,200 @@
+% ==========================================================
+% 9. Summary and Practical Takeaways
+% ==========================================================
+\section{Summary and Practical Takeaways}
+
+This chapter summarizes the main ideas of the previous sections and
+connects them to practical questions about how Transformer training
+actually runs on hardware. Rather than introducing new notation, we focus
+on a small number of mental models that are useful when reading execution
+diagrams, reasoning about cost, or deciding how to parallelize a model.
+
+\subsection{From Gradients to Graphs to Transformers}
+
+The early chapters of this document built up three layers of intuition:
+
+\begin{itemize}
+  \item \textbf{Gradients as linear maps.}
+        Backpropagation through a layer can be viewed as another
+        computation graph, where each forward operation contributes one or
+        more backward operations (often transposed matmuls). This leads to
+        the simple rule of thumb that a linear layer roughly doubles the
+        cost in the backward pass.
+  \item \textbf{Graph conventions.}
+        Forward tensors, gradients, and parameters are represented as
+        nodes with explicit shapes. Arrows and labels make it possible to
+        read off which matmuls and elementwise ops appear in each phase
+        without looking at code.
+  \item \textbf{Single-node Transformer.}
+        A Transformer layer is just a composition of:
+        \begin{itemize}
+          \item embedding lookup + positional encoding,
+          \item MHA (LN, QKV projections, attention, output projection,
+                residual),
+          \item MLP (LN, up-projection, non-linearity, down-projection,
+                residual),
+          \item output projection + softmax + loss.
+        \end{itemize}
+        Each block has a forward graph and a matching backward graph with
+        one or two matmuls for each forward matmul.
+\end{itemize}
+
+The single-node diagrams in Section~\ref{sec:sn} are therefore the ``base case'' for
+all later parallel variants: every parallel configuration is just a way of
+splitting, replicating, and reconnecting this same underlying graph.
+
+\subsection{Cost and Memory: What Really Matters}
+
+Several general patterns show up across all layers:
+
+\begin{itemize}
+  \item \textbf{Matmuls dominate.}
+        The vast majority of FLOPs live in linear layers
+        (Q/K/V projections, attention output projection, MLP up/down
+        projections, output projection). Elementwise ops (softmax, GELU,
+        layernorm) are important for correctness but cheap by comparison.
+  \item \textbf{Backward is $\approx 2\times$ forward for matmuls.}
+        Each forward matmul $XW$ produces at least:
+        \begin{itemize}
+          \item one backward matmul to propagate gradients to $X$, and
+          \item one backward matmul to accumulate gradients into $W$.
+        \end{itemize}
+        This is explicitly visible in the backward diagrams for MHA and
+        MLP.
+  \item \textbf{Residual connections do not add much cost.}
+        They split gradients but do not change asymptotic complexity:
+        a residual add introduces cheap elementwise ops in both directions.
+  \item \textbf{Layer normalization is modest but ubiquitous.}
+        LN adds some per-token compute and a small number of parameters.
+        Its backward pass is a bit more involved than, say, ReLU, but
+        still far cheaper than the surrounding matmuls.
+\end{itemize}
+
+When approximating the cost of a model, it is therefore usually enough to
+count the large matmuls and remember that the backward pass is roughly
+twice as expensive as the forward pass for those layers.
+
+\subsection{Single-Node vs.\ TP vs.\ DP vs.\ DP+TP}
+
+The later chapters compared four execution modes:
+
+\begin{itemize}
+  \item \textbf{Single node (Section~\ref{sec:sn}).}
+        All parameters and activations live on one device. The diagrams in
+        that section are the reference implementation: no sharding, no
+        collectives, just a sequence of matmuls and elementwise ops.
+  \item \textbf{Tensor parallelism (Section~\ref{sec:tp}).}
+        Weight matrices and some activations are split across $N_T$
+        devices inside a \emph{model shard}. Column-parallel and
+        row-parallel linears replace the single-node matmuls. All-Reduce
+        and All-Gather collectives appear \emph{inside} the layer graphs
+        to combine partial results or reassemble sharded tensors.
+  \item \textbf{Data parallelism (Section~\ref{sec:dp}).}
+        The full model (or full TP shard) is replicated across $N_D$
+        devices. Each replica sees a different mini-batch shard and runs
+        the same forward/backward graph as in the single-node or TP case.
+        The only new collective is an All-Reduce over parameter gradients
+        at the end of the backward pass.
+  \item \textbf{DP + TP (Section~\ref{sec:dp_tp}).}
+        Each DP replica is itself a TP group. Inside a TP group, all
+        intra-layer collectives from Section~\ref{sec:tp} (All-Reduce, All-Gather)
+        still apply. Across replicas, additional All-Reduces average
+        gradients for each TP shard. Some layers (e.g., vocabulary-parallel
+        output heads) require All-Gather on activations when a subsequent
+        operation needs a full (unsharded) tensor.
+\end{itemize}
+
+In other words:
+
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Single node} & no collectives, full weights on one device \\[0.2em]
+\textbf{TP}          & shard weights/activations, intra-layer collectives \\[0.2em]
+\textbf{DP}          & replicate model, gradient All-Reduce only \\[0.2em]
+\textbf{DP+TP}       & TP inside each replica + DP gradient All-Reduce
+\end{tabular}
+\end{center}
+
+Conceptually, none of these modes change what the Transformer \emph{is}
+computing; they only change where each piece of the graph runs and how
+partial results are stitched back together.
+
+\subsection{Reading and Using the Diagrams}
+
+The diagrams throughout this document are designed to answer a small set
+of recurring questions:
+
+\begin{itemize}
+  \item \textbf{Where are the big matmuls?}
+        Look for rectangular nodes with shapes like $[B,S,D]$ and weight
+        matrices with shapes $[D,D_{\text{ff}}]$, $[D,D]$, or
+        $[D,D_{\text{vocab}}]$. These are the main sources of FLOPs.
+  \item \textbf{Where do gradients flow?}
+        Dashed arrows and backward-specific nodes show how
+        $\mathrm{d}\mathcal{L}$ propagates. Following these arrows makes
+        it clear which tensors need to be stored for backward and where
+        activations can be recomputed.
+  \item \textbf{Where is memory used?}
+        Any place where a forward tensor is needed again in backward
+        contributes to activation memory. Attention score tensors
+        $[B,N_H,S,S]$ and intermediate MLP activations $[B,S,D_{\text{ff}}]$
+        are particularly expensive.
+  \item \textbf{Where do collectives occur?}
+        In TP and DP diagrams, colored or labeled arrows denote All-Reduce
+        and All-Gather. These positions determine the communication cost
+        and the critical path length when scaling to many devices.
+\end{itemize}
+
+With this vocabulary, one can often look at a new architecture (e.g., a
+variant MLP, a different attention mechanism) and immediately sketch its
+core cost and parallelization pattern.
+
+\subsection{Practical Rules of Thumb}
+
+The following informal rules capture many of the practical lessons from
+the previous chapters:
+
+\begin{itemize}
+  \item \textbf{Start with the single-node graph.}
+        Always begin reasoning from the simplest view: what would the
+        model do on a single device? Then layer TP and DP on top.
+  \item \textbf{Think in matmuls, not lines of code.}
+        Count how many large matmuls appear per token, and remember that
+        each will be paid for again (roughly twice) in backward.
+  \item \textbf{TP trades memory for intra-layer communication.}
+        Sharding along feature dimensions reduces per-device memory but
+        introduces All-Reduce/All-Gather inside layers. Use it when the
+        model is too large for a single device.
+  \item \textbf{DP trades global batch size for gradient communication.}
+        Replicating the model is simple and keeps layer graphs intact,
+        but every parameter must participate in a gradient All-Reduce.
+  \item \textbf{DP + TP is the default for very large models.}
+        In practice, most large-scale systems combine both: TP to make the
+        model fit, DP to scale the batch and throughput.
+  \item \textbf{Collectives define your scaling limits.}
+        Once the model fits in memory, additional speedups are mostly
+        limited by the number, size, and placement of All-Reduce and
+        All-Gather operations.
+\end{itemize}
+
+\subsection{Where to Go Next}
+
+This document deliberately focused on a single Transformer layer and a
+small set of parallel strategies. Extensions in real systems include:
+
+\begin{itemize}
+  \item \textbf{Pipeline parallelism:} splitting layers across devices in
+        depth and overlapping micro-batches.
+  \item \textbf{Activation checkpointing:} trading recomputation for
+        reduced activation memory.
+  \item \textbf{Optimizer and parameter sharding:} partitioning optimizer
+        state and even the parameters themselves across nodes in more
+        complex ways.
+\end{itemize}
+
+However, the core mental model remains the same: start from a precise
+computation graph (as in the single-node diagrams), then ask how that
+graph is sliced across devices, where communication appears, and how
+gradients are aggregated. If those three questions are clear, most
+seemingly complicated parallel configurations reduce to simple, familiar
+building blocks.

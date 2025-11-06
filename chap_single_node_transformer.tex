@@ -1,0 +1,427 @@
+% ==========================================================
+% 5. Single-Node Transformer: Forward and Backward
+% ==========================================================
+\section{Single-Node Transformer: Forward and Backward}
+\label{sec:sn}
+
+This section presents the full Transformer layer running on a single node
+(no parallelism). We emphasize tensor shapes and data flow for both
+forward and backward passes. Each subsection covers one major component:
+
+\begin{itemize}
+  \item \textbf{Input Embedding}: Converting token IDs to dense vectors.
+  \item \textbf{Multi-Head Attention (MHA)}: Computing attention over the sequence.
+  \item \textbf{Feed-Forward Network (MLP/FFN)}: Position-wise non-linear processing.
+  \item \textbf{Output Projection and Loss}: Generating predictions and computing loss.
+\end{itemize}
+
+We assume a batch of tokenized sequences with shape $[B,S]$, where $B$ is
+batch size and $S$ is sequence length. The hidden representations inside
+the layer typically have shape $[B,S,D]$, where $D$ is the model (hidden)
+dimension. In the backward pass we track how gradients with respect to the
+scalar loss $\mathcal{L}$ flow backward through these tensors and the
+corresponding weight matrices.
+
+% ------------------------ 5.0 Overall Layer Flow ---------------------
+\subsection{Overall Transformer Layer Flow}
+
+Before diving into individual components, we provide a high-level view of
+how data flows through the entire Transformer layer in both forward and
+backward passes. Figure~\ref{fig:single_node_overall} summarizes the
+forward path from input embeddings through MHA, MLP, and output projection,
+and the corresponding backward paths from the loss back to the embeddings.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow.tex}
+  \caption{Single-node Transformer layer: overall forward and backward
+  flow. Solid arrows denote forward activations, and dashed arrows denote
+  gradients flowing backward from the loss $\mathcal{L}$ through the
+  output projection, MLP, MHA, and back to the input embeddings.}
+  \label{fig:single_node_overall}
+\end{figure}
+
+\clearpage
+
+% ------------------------ 5.1 Input Embedding ------------------------
+\subsection{Input Embedding Layer}
+
+The input embedding layer converts discrete token IDs into continuous
+vector representations, producing the initial hidden states
+$\mathbf{X} \in \mathbb{R}^{B \times S \times D}$ that enter the
+Transformer stack. We assume:
+
+\begin{itemize}
+  \item A token embedding matrix $\mathbf{E} \in \mathbb{R}^{V \times D}$,
+        where $V$ is the vocabulary size.
+  \item A positional embedding table $\mathbf{P} \in \mathbb{R}^{S \times D}$,
+        either learned or fixed (e.g., sinusoidal).
+\end{itemize}
+
+Given token IDs $\mathbf{T} \in [B,S]$, the embedding layer performs:
+
+\begin{enumerate}
+  \item \textbf{Token embedding lookup}: each token ID indexes into
+        $\mathbf{E}$ to form $\mathbf{X}_{\text{tok}} \in [B,S,D]$.
+  \item \textbf{Positional embedding addition}: positional vectors
+        $\mathbf{P}[s,:]$ are added to each time step $s$.
+  \item \textbf{Dropout (optional)}: a dropout layer may be applied to
+        the resulting embeddings for regularization during training.
+\end{enumerate}
+
+The resulting hidden states $\mathbf{X}$, with shape $[B,S,D]$, appear on
+the left of Figure~\ref{fig:single_node_overall} as the starting point of
+the layer, and the detailed dataflow inside the embedding block is shown
+in Figure~\ref{fig:single_node_input_embedding}.
+
+\subsubsection{Forward Pass}
+
+\begin{figure}[htbp]
+  \centering
+  \input{input_embedding.tex}
+  \caption{Input embedding forward pass. Token IDs are mapped to token
+  embeddings using $\mathbf{E}$, positional embeddings $\mathbf{P}$ are
+  added, and optional dropout yields the initial hidden states
+  $\mathbf{X} \in [B,S,D]$.}
+  \label{fig:single_node_input_embedding}
+\end{figure}
+
+In the backward pass (not shown as a separate figure), gradients with
+respect to the embeddings are accumulated into the token embedding
+matrix $\mathbf{E}$ and positional table $\mathbf{P}$ by summing over all
+positions where each embedding is used.
+
+\clearpage
+
+% ------------------------ 5.2 Multi-Head Attention -------------------
+\subsection{Multi-Head Attention (MHA)}
+
+Multi-Head Attention enables the model to jointly attend to information
+from different representation subspaces. The mechanism involves:
+
+\begin{itemize}
+  \item \textbf{Linear projections}: mapping inputs to queries (Q),
+        keys (K), and values (V).
+  \item \textbf{Scaled dot-product attention}: computing attention scores
+        and weighted sums of values.
+  \item \textbf{Multi-head splitting}: processing $N_H$ attention heads
+        in parallel, each with dimension $D_h$ such that $D = N_H D_h$.
+  \item \textbf{Output projection}: concatenating heads and projecting
+        back to the model dimension.
+\end{itemize}
+
+Given input activations $\mathbf{X} \in [B,S,D]$, the forward pass uses
+layer normalization, QKV projections, attention over the sequence, and a
+residual connection back to $\mathbf{X}$. The overall structure of this
+computation is visualized in
+Figure~\ref{fig:single_node_mha_forward}, while the corresponding gradient
+flow during training is shown in
+Figure~\ref{fig:single_node_mha_backward}.
+
+\subsubsection{Forward Pass}
+
+Given input activations $\mathbf{X} \in \mathbb{R}^{B \times S \times D}$,
+the multi-head self-attention block computes an output
+$\mathbf{A}_{\text{out}} \in \mathbb{R}^{B \times S \times D}$ that will be
+fed into the following MLP block. The same tensor shapes and operations
+are annotated along the edges of
+Figure~\ref{fig:single_node_mha_forward} for quick visual reference.
+
+\paragraph{(1) Layer normalization on the input.}
+We first normalize the input along the hidden dimension:
+\[
+  \mathbf{X}_{\text{norm}} = \mathrm{LN}(\mathbf{X}) \in \mathbb{R}^{B \times S \times D}.
+\]
+Layer normalization is parameterized by learnable scale and bias vectors
+$\boldsymbol{\gamma}, \boldsymbol{\beta} \in \mathbb{R}^{D}$, but for
+brevity we only track the normalized activations here. In
+Figure~\ref{fig:single_node_mha_forward}, this corresponds to the leftmost
+normalization block before the Q/K/V projections.
+
+\paragraph{(2) Linear projections to Q, K, V.}
+From $\mathbf{X}_{\text{norm}}$ we compute queries, keys, and values via
+three independent linear layers:
+\[
+  \mathbf{Q} = \mathbf{X}_{\text{norm}} W_Q,\quad
+  \mathbf{K} = \mathbf{X}_{\text{norm}} W_K,\quad
+  \mathbf{V} = \mathbf{X}_{\text{norm}} W_V,
+\]
+where $W_Q, W_K, W_V \in \mathbb{R}^{D \times D}$. Each of these tensors
+is then reshaped into a head-major representation,
+\[
+  \mathbf{Q},\mathbf{K},\mathbf{V}
+    \;\in\; \mathbb{R}^{B \times N_H \times S \times D_h},
+  \qquad D = N_H \cdot D_h.
+\]
+These projections and reshapes are drawn explicitly in the upper left of
+Figure~\ref{fig:single_node_mha_forward}, where each head receives its own
+$D_h$-dimensional slice.
+
+\paragraph{(3) Scaled dot-product attention per head.}
+For each head, we form attention scores by a scaled dot-product between
+queries and keys:
+\[
+  \mathbf{S} = \frac{\mathbf{Q}\mathbf{K}^{\top}}{\sqrt{D_h}}
+  \;\in\; \mathbb{R}^{B \times N_H \times S \times S},
+\]
+where the last two dimensions correspond to
+(query position, key position). A causal mask or padding mask is applied
+to $\mathbf{S}$ to prevent attending to invalid positions. After masking,
+a softmax along the last dimension produces attention weights:
+\[
+  \mathbf{A}_{S} = \mathrm{Softmax}(\mathrm{Mask}(\mathbf{S}))
+  \;\in\; \mathbb{R}^{B \times N_H \times S \times S}.
+\]
+These weights are then used to aggregate values:
+\[
+  \mathbf{A}_{\text{heads}} = \mathbf{A}_{S}\mathbf{V}
+  \;\in\; \mathbb{R}^{B \times N_H \times S \times D_h},
+\]
+as depicted in the central part of
+Figure~\ref{fig:single_node_mha_forward}, where each head computes a
+weighted sum over the value vectors.
+
+\paragraph{(4) Head concatenation and output projection.}
+The per-head outputs are concatenated along the head dimension and
+reshaped back to the model dimension:
+\[
+  \mathbf{A}_{\text{cat}}
+    = \mathrm{ConcatHeads}(\mathbf{A}_{\text{heads}})
+    \;\in\; \mathbb{R}^{B \times S \times D}.
+\]
+A final output projection maps this back into the same hidden space:
+\[
+  \mathbf{A}_{\text{lin}} = \mathbf{A}_{\text{cat}} W_O + \mathbf{b}_O,
+  \qquad W_O \in \mathbb{R}^{D \times D},\;
+         \mathbf{b}_O \in \mathbb{R}^{D}.
+\]
+This corresponds to the right side of
+Figure~\ref{fig:single_node_mha_forward}, where all heads are merged and
+projected back to $[B,S,D]$.
+
+\paragraph{(5) Dropout and residual connection.}
+During training, dropout may be applied to $\mathbf{A}_{\text{lin}}$:
+\[
+  \mathbf{A}_{\text{drop}} = \mathrm{Dropout}(\mathbf{A}_{\text{lin}}),
+\]
+and the result is added back to the original input via a residual
+connection:
+\[
+  \mathbf{A}_{\text{out}} = \mathbf{X} + \mathbf{A}_{\text{drop}}
+  \;\in\; \mathbb{R}^{B \times S \times D}.
+\]
+The final sum node and residual edge are explicitly shown on the far right
+of Figure~\ref{fig:single_node_mha_forward}. This
+$\mathbf{A}_{\text{out}}$ becomes the input to the subsequent MLP block.
+
+\begin{landscape}
+\begin{figure}[p]
+  \centering
+  \input{mha_forward.tex}
+  \caption{Multi-head attention forward pass on a single node.
+  Input activations $\mathbf{X}$ are layer-normalized, projected to
+  $\mathbf{Q}$, $\mathbf{K}$, and $\mathbf{V}$, processed by scaled
+  dot-product attention over the sequence, concatenated across heads, and
+  projected back to $[B,S,D]$ with an output projection and residual
+  connection.}
+  \label{fig:single_node_mha_forward}
+\end{figure}
+\end{landscape}
+
+\subsubsection{Backward Pass}
+
+In the backward pass, gradients arrive from the residual output and
+propagate through the output projection, attention mechanism, QKV
+projections, and layer normalization. Figure~\ref{fig:single_node_mha_backward}
+mirrors Figure~\ref{fig:single_node_mha_forward} but with dashed arrows
+showing gradient flow and explicit nodes for each matrix multiplication in
+the backward path.
+
+At a high level:
+
+\begin{itemize}
+  \item Gradients from the loss provide $\mathrm{d}\mathbf{A}_{\text{out}}$
+        at the output of the attention block, which are split between the
+        residual branch and the main path, as shown on the right of
+        Figure~\ref{fig:single_node_mha_backward}.
+  \item The output projection is backpropagated to obtain gradients for
+        weights and biases and to recover $\mathrm{d}\mathbf{A}_{\text{cat}}$
+        before head concatenation.
+  \item The per-head attention computation is differentiated to obtain
+        $\mathrm{d}\mathbf{V}$ and $\mathrm{d}\mathbf{A}_{S}$, and then
+        $\mathrm{d}\mathbf{Q}$ and $\mathrm{d}\mathbf{K}$ through the
+        scaled dot-product and softmax, corresponding to the central
+        region of Figure~\ref{fig:single_node_mha_backward}.
+  \item QKV projection layers accumulate gradients for
+        $\mathbf{W}_Q, \mathbf{W}_K, \mathbf{W}_V$ and produce
+        $\mathrm{d}\mathbf{X}_{\text{norm}}$, shown on the left side of
+        Figure~\ref{fig:single_node_mha_backward}.
+  \item Layer normalization backward finally produces
+        $\mathrm{d}\mathbf{X}$ that flows to the previous block and
+        parameter gradients for the LN parameters.
+\end{itemize}
+
+\begin{landscape}
+\begin{figure}[p]
+  \input{mha_backward.tex}
+  \caption{Multi-head attention backward pass. The diagram shows
+  how gradients from $\mathrm{d}\mathbf{A}_{\text{out}}$ are propagated
+  through the output projection, attention heads, QKV projection matrices,
+  and layer normalization to yield $\mathrm{d}\mathbf{X}$ and all associated
+  weight and bias gradients.}
+  \label{fig:single_node_mha_backward}
+\end{figure}
+\end{landscape}
+
+
+% ------------------------ 5.3 MLP / FFN Block ------------------------
+\subsection{Feed-Forward Network (MLP / FFN)}
+
+The feed-forward network (FFN) applies two linear transformations with a
+non-linear activation in between, independently at each position in the
+sequence. Starting from $\mathbf{X}' \in [B,S,D]$ (the output of MHA with
+residual), the FFN performs:
+
+\begin{itemize}
+  \item \textbf{Up-projection}:
+        $[B,S,D] \rightarrow [B,S,D_{\text{ff}}]$ (expanding the dimension).
+  \item \textbf{Activation}: GELU or ReLU non-linearity applied elementwise.
+  \item \textbf{Down-projection}:
+        $[B,S,D_{\text{ff}}] \rightarrow [B,S,D]$ (projecting back).
+  \item \textbf{Dropout and residual}: dropout on the FFN output followed
+        by a residual connection back to $\mathbf{X}'$.
+\end{itemize}
+
+The forward structure of this block is illustrated in
+Figure~\ref{fig:single_node_mlp_forward}, and the corresponding backward
+matmuls are expanded in
+Figure~\ref{fig:single_node_mlp_backward}.
+
+\subsubsection{Forward Pass}
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_forward.tex}
+  \caption{Feed-forward (MLP) forward pass. Hidden states are
+  layer-normalized, projected up to dimension $D_{\text{ff}}$, passed
+  through a non-linearity and dropout, projected back to $D$, and combined
+  with the input via a residual connection.}
+  \label{fig:single_node_mlp_forward}
+\end{figure}
+
+\subsubsection{Backward Pass}
+
+The MLP backward pass is a canonical example of the ``2$\times$ cost''
+rule: each forward matrix multiplication generates two backward matmuls
+(one for activations, one for weights). Starting from
+$\mathrm{d}\mathbf{Y}$ at the FFN output, the backward pass proceeds as:
+
+\begin{enumerate}
+  \item \textbf{Residual and dropout backward}: split $\mathrm{d}\mathbf{Y}$
+        into the identity path and the path through the final dropout to
+        obtain $\mathrm{d}\mathbf{Z}_{\text{down}}$.
+  \item \textbf{Down-projection backward}: compute
+        $\mathrm{d}\mathbf{U}$ (w.r.t.\ activations) and obtain
+        gradients for $\mathbf{W}_{\text{down}}$ and
+        $\mathbf{b}_{\text{down}}$.
+  \item \textbf{Activation and dropout backward}: backpropagate through
+        dropout and the non-linearity (e.g., GELU) to obtain
+        $\mathrm{d}\mathbf{Z}_{\text{up}}$.
+  \item \textbf{Up-projection backward}: compute
+        $\mathrm{d}\mathbf{H}$ and gradients for
+        $\mathbf{W}_{\text{up}}$ and $\mathbf{b}_{\text{up}}$.
+  \item \textbf{Layer normalization backward}: propagate
+        $\mathrm{d}\mathbf{H}$ through layer normalization to produce
+        $\mathrm{d}\mathbf{X}'$ (which flows into the MHA block) and
+        gradients for LN parameters.
+\end{enumerate}
+
+As with MHA, every matmul in the forward path corresponds to two matmuls
+in the backward path, which are shown explicitly in
+Figure~\ref{fig:single_node_mlp_backward}.
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_backward.tex}
+  \caption{Feed-forward (MLP) backward pass. The figure shows how
+  $\mathrm{d}\mathbf{Y}$ splits through the residual and FFN path, and how
+  gradients flow through the down-projection, activation, up-projection,
+  and layer normalization to yield $\mathrm{d}\mathbf{X}'$ and the
+  corresponding parameter gradients.}
+  \label{fig:single_node_mlp_backward}
+\end{figure}
+
+% ------------------------ 5.4 Output Projection & Loss ---------------
+\subsection{Output Projection and Loss}
+
+The final stage converts the Transformer's hidden representations into
+predictions over the vocabulary and computes the training loss. We assume
+the last layer output is $\mathbf{A}_{\text{out}} \in [B,S,D]$, and the
+training targets are token IDs
+$\mathbf{Y}_{\text{targets}} \in [B,S]$.
+
+\begin{itemize}
+  \item \textbf{Linear projection}:
+        $[B,S,D] \rightarrow [B,S,V]$ to produce logits.
+  \item \textbf{Softmax}: converting logits into probability distributions.
+  \item \textbf{Cross-Entropy Loss}: comparing probabilities with target
+        tokens to produce a scalar loss $\mathcal{L}$.
+\end{itemize}
+
+The forward and backward views of this stage are depicted in
+Figures~\ref{fig:single_node_output_forward} and
+\ref{fig:single_node_output_backward}, respectively.
+
+\subsubsection{Forward Pass (Logits, Softmax, Loss)}
+
+\begin{figure}[htbp]
+  \centering
+  \input{output_proj.tex}
+  \caption{Output projection and loss: the final hidden states
+  $\mathbf{A}_{\text{out}}$ are mapped to logits by the language model
+  head $(\mathbf{W}_{\text{lm}}, \mathbf{b}_{\text{lm}})$, converted to
+  probabilities by softmax, and compared with target tokens using
+  cross-entropy.}
+  \label{fig:single_node_output_forward}
+\end{figure}
+
+
+\subsubsection{Backward Pass}
+
+The backward pass starts from $\mathrm{d}\mathcal{L} = 1$ and propagates
+gradients through the loss, softmax, and linear projection:
+
+\begin{enumerate}
+  \item \textbf{Cross-entropy + softmax backward}: for each position,
+        softmax and cross-entropy combine to give
+        $\mathrm{d}\mathbf{Z} = \mathbf{P} - \mathbf{Y}_{\text{onehot}}$,
+        where $\mathbf{P}$ is the softmax output and
+        $\mathbf{Y}_{\text{onehot}}$ is the one-hot encoding of the
+        target token.
+  \item \textbf{Bias and weight gradients}: accumulate
+        $\mathrm{d}\mathbf{b}_{\text{lm}} = \sum_{b,s} \mathrm{d}\mathbf{Z}[b,s,:]$
+        and compute
+        $\mathrm{d}\mathbf{W}_{\text{lm}} = \mathbf{A}_{\text{out}}^{\top}
+        \mathrm{d}\mathbf{Z}$.
+  \item \textbf{Gradient to hidden states}: propagate gradients back to
+        the Transformer by
+        $\mathrm{d}\mathbf{A}_{\text{out}} =
+        \mathrm{d}\mathbf{Z}\,\mathbf{W}_{\text{lm}}^{\top}$.
+\end{enumerate}
+
+These steps correspond directly to the blocks and arrows in
+Figure~\ref{fig:single_node_output_backward}, where the softmax and
+cross-entropy are fused into a single gradient expression with respect to
+the logits.
+
+\begin{figure}[htbp]
+  \centering
+  \input{output_proj_backward.tex}
+  \caption{Output projection backward pass. Gradients from the loss are
+  propagated through cross-entropy and softmax to the logits, then through
+  the language model projection to produce
+  $\mathrm{d}\mathbf{A}_{\text{out}}$ and parameter gradients
+  $\mathrm{d}\mathbf{W}_{\text{lm}}$ and $\mathrm{d}\mathbf{b}_{\text{lm}}$.}
+  \label{fig:single_node_output_backward}
+\end{figure}
+

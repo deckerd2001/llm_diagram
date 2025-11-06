@@ -1,0 +1,275 @@
+% ==========================================================
+% 7. Data Parallelism (DP)
+% ==========================================================
+\section{Data Parallelism (DP)}
+\label{sec:dp}
+
+In data parallelism, each replica holds a full copy of the model, but
+processes a different subset of the batch. Conceptually, each device runs
+the same forward and backward computation as in the single-node setting
+(Section~\ref{sec:sn}), but on a different mini-batch. After the backward pass,
+gradients are synchronized across replicas via All-Reduce so that the
+optimizer update is identical to what would have been obtained on a
+single node with the full batch.
+
+From the point of view of a single replica, the forward graph inside each
+Transformer block is therefore identical to the one in
+Section~\ref{sec:sn} (single-node), or to Section~\ref{sec:tp} (tensor-parallel) if TP is also
+enabled. The only change is the input: instead of the full batch
+$\mathbf{X} \in \mathbb{R}^{B \times S \times D}$, replica $d$ sees a
+local shard $\mathbf{X}_d \in \mathbb{R}^{B_{\text{local}} \times S \times D}$,
+with $B_{\text{local}} = B / N_D$.
+
+We denote the number of data-parallel replicas by $N_D$. Devices are
+indexed by $d \in \{0,\dots,N_D-1\}$.
+
+\textbf{Key ideas:}
+\begin{itemize}
+  \item Each device has a full copy of the model parameters (weights and
+        optimizer state).
+  \item The global batch of size $B$ is split into $N_D$ local batches of
+        size $B_{\text{local}} = B / N_D$.
+  \item The forward pass on each device is identical to the single-node
+        computation in Section~\ref{sec:sn}, but uses only its local batch.
+  \item The backward pass computes local gradients
+        $\nabla W^{(d)}$ on each device.
+  \item All-Reduce over all data-parallel replicas averages or sums the
+        gradients, producing the same effective update as a single-node
+        run with batch size $B$.
+\end{itemize}
+
+In contrast to tensor parallelism (Section~\ref{sec:tp}), DP does not shard weight
+matrices or activations; instead, it replicates the entire model and
+splits only the data.
+
+% ------------------------ 7.1 Overall DP Flow -------------------------
+\subsection{Overall DP Training Flow}
+
+Figure~\ref{fig:dp_overall_flow} shows a high-level view of data
+parallelism applied to a Transformer layer. Compared to the single-node
+overview (Figure~\ref{fig:single_node_overall}), the main difference is
+that we now have $N_D$ identical copies of the block, each processing a
+different input shard $\mathbf{X}_d$ and producing local predictions and
+losses.
+
+For a single training step, the sequence of operations is:
+
+\begin{enumerate}
+  \item \textbf{Batch sharding.} The input batch of size $B$ is split
+        into $N_D$ local batches, each of size $B_{\text{local}}$:
+        \[
+          \{\mathbf{X}_0,\dots,\mathbf{X}_{N_D-1}\},
+          \qquad
+          \mathbf{X}_d \in \mathbb{R}^{B_{\text{local}} \times S \times D_{\text{in}}}.
+        \]
+        Each device $d$ also receives the corresponding target tokens
+        $\mathbf{Y}_d$.
+  \item \textbf{Local forward pass.} On each device, the full Transformer
+        stack (input embedding, MHA, MLP, output projection) is applied to
+        its local shard $\mathbf{X}_d$ exactly as in Section~\ref{sec:sn}. If tensor
+        parallelism from Section~\ref{sec:tp} is also used, then each replica runs
+        the same TP-augmented forward graph on $\mathbf{X}_d$. In either
+        case, the structure of the forward pass is unchanged; only the
+        batch dimension and the presence of gradient synchronization
+        differ. Each device produces local logits, probabilities, and
+        loss $\mathcal{L}_d$.
+  \item \textbf{Local backward pass.} The loss $\mathcal{L}_d$ is
+        backpropagated locally, yielding gradients
+        $\nabla W^{(d)}$ for all parameters on device $d$.
+  \item \textbf{Gradient synchronization (All-Reduce).} For each
+        parameter tensor $W$, an All-Reduce over the data-parallel group
+        is performed:
+        \[
+          \nabla W
+            = \frac{1}{N_D}
+              \sum_{d=0}^{N_D-1} \nabla W^{(d)}.
+        \]
+        After this step, all replicas hold identical averaged gradients
+        $\nabla W$.
+  \item \textbf{Optimizer update.} Each device applies the same optimizer
+        (SGD, Adam, etc.) to its local copy of the parameters using the
+        synchronized gradients. Because the gradients are identical across
+        devices, the updated weights are also identical.
+\end{enumerate}
+
+Apart from the All-Reduce in step 4, the computations on each device are
+identical copies of the single-node graph.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow_DP.tex}
+  \caption{Overall Transformer layer under data parallelism. Each device
+  holds a full copy of the model and processes a different shard of the
+  input batch ($\mathbf{X}_i$, $\mathbf{X}_j$, \dots). Forward and
+  backward passes are performed locally as in the single-node case, and
+  gradients for each block (MHA, MLP, output projection) are synchronized
+  across replicas via All-Reduce.}
+  \label{fig:dp_overall_flow}
+\end{figure}
+
+
+% ------------------------ 7.2 Relation to Single-Node -----------------
+\subsection{Relationship to the Single-Node Computation}
+
+It is often useful to think of DP as a pure “wrapper” around the
+single-node computation from Section~\ref{sec:sn}:
+
+\begin{itemize}
+  \item \textbf{Same computation graph per replica.}
+        For any given layer (MHA, MLP, output projection), the forward and
+        backward graphs on a single device are identical to those in the
+        single-node diagrams (Figures~\ref{fig:single_node_mha_forward},
+        \ref{fig:single_node_mha_backward},
+        \ref{fig:single_node_mlp_forward},
+        \ref{fig:single_node_mlp_backward}, etc.), or to their
+        tensor-parallel counterparts in Section~\ref{sec:tp} when TP is enabled.
+        Only the input batch is different:
+        $\mathbf{X}_d$ is a shard of the global batch.
+  \item \textbf{Different mini-batches.}
+        The only difference in the forward pass is that each replica sees
+        a different chunk of the global batch. There is no communication
+        needed for forward activations in DP.
+  \item \textbf{Gradient aggregation only.}
+        In the backward pass, each replica computes local gradients as if
+        it were running independently. Only after all local gradients have
+        been computed do we introduce communication: an All-Reduce over
+        all replicas for each parameter tensor.
+  \item \textbf{Equivalence to larger batch.}
+        When gradients are averaged across replicas, the resulting update
+        is mathematically equivalent to a single-node run with batch size
+        $B = N_D \cdot B_{\text{local}}$ (ignoring subtle differences from
+        e.g.\ dropout noise).
+\end{itemize}
+
+In contrast, tensor parallelism (Section~\ref{sec:tp}) changes the graph inside each
+layer by sharding weight matrices and adding collectives in the middle of
+the forward and backward passes. DP keeps the layer graphs intact and
+adds communication only at the level of gradients.
+
+% ------------------------ 7.3 MHA Backward under DP -------------------
+\subsection{MHA Backward under DP}
+
+For the multi-head attention block, the local backward pass on each device
+is exactly the same as in
+Figure~\ref{fig:single_node_mha_backward}: gradients flow from the loss
+through the output projection, attention heads, Q/K/V projections, and
+layer normalization back to the input $\mathbf{X}$.
+
+The only DP-specific difference is how gradients with respect to the MHA
+parameters are combined across replicas. Let
+$W_Q, W_K, W_V, W_O$ be the query, key, value, and output projection
+matrices. On device $d$, the local backward pass computes
+$\nabla W_Q^{(d)}, \nabla W_K^{(d)}, \nabla W_V^{(d)}, \nabla W_O^{(d)}$.
+An All-Reduce across all data-parallel replicas then aggregates these
+gradients:
+\[
+  \nabla W_Q
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_Q^{(d)},\quad
+  \nabla W_K
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_K^{(d)},
+\]
+\[
+  \nabla W_V
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_V^{(d)},\quad
+  \nabla W_O
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_O^{(d)}.
+\]
+After this synchronization, each device holds the same averaged gradients
+$\nabla W_Q, \nabla W_K, \nabla W_V, \nabla W_O$.
+
+Figure~\ref{fig:mha_backward_dp} illustrates this process: the internal
+nodes and shapes inside the MHA block are identical to
+Figure~\ref{fig:single_node_mha_backward}, but additional DP-specific
+boxes and red dashed arrows mark the All-Reduce operations over replica
+gradients.
+
+\begin{landscape}
+\begin{figure}[p]
+  % no \centering here to avoid compilation issues
+  \input{mha_backward_DP.tex}
+  \caption{Multi-head attention backward pass under data parallelism. Each
+  replica computes local gradients w.r.t.\ $W_Q$, $W_K$, $W_V$, and $W_O$
+  using its own mini-batch. Red dashed arrows indicate All-Reduce
+  operations that aggregate these local gradients across all data-parallel
+  replicas to form the global gradients used by the optimizer. The
+  internal structure of the backward graph matches the single-node case.}
+  \label{fig:mha_backward_dp}
+\end{figure}
+\end{landscape}
+
+% ------------------------ 7.4 MLP Backward under DP -------------------
+\subsection{MLP Backward under DP}
+
+The situation for the MLP block is similar. Locally, each replica performs
+exactly the same backward computations as in
+Figure~\ref{fig:single_node_mlp_backward}: gradients propagate from
+$\mathrm{d}\mathbf{Y}$ through the down-projection, activation,
+up-projection, and (optional) layer normalization back to $\mathbf{H}$,
+while accumulating parameter gradients for
+$W_{\text{up}}, W_{\text{down}}, \mathbf{b}_{\text{up}},
+\mathbf{b}_{\text{down}}$.
+
+Under data parallelism, each replica $d$ obtains its own local gradients
+$\nabla W_{\text{up}}^{(d)}, \nabla W_{\text{down}}^{(d)}$ and similarly
+for the biases. These are then synchronized across replicas via
+All-Reduce:
+\[
+  \nabla W_{\text{up}}
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_{\text{up}}^{(d)},\quad
+  \nabla W_{\text{down}}
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_{\text{down}}^{(d)}.
+\]
+Bias gradients are treated analogously. Because the MLP input $\mathbf{H}$
+is replicated across devices, no additional communication is needed for
+$\mathrm{d}\mathbf{H}$ itself: each replica computes the same functional
+backward map but with different data, and the effect of aggregation is
+entirely captured by averaging the parameter gradients.
+
+Figure~\ref{fig:mlp_backward_dp} marks the locations of these All-Reduce
+operations in the MLP backward graph.
+
+\begin{figure}[p]
+  % no \centering here to avoid compilation issues
+  \input{mlp_backward_DP.tex}
+  \caption{MLP backward pass under data parallelism. Each replica computes
+  local gradients for the up- and down-projection weights and biases using
+  its own mini-batch. Red boxes and dashed arrows indicate All-Reduce
+  operations that aggregate these local parameter gradients across
+  replicas. The structure of the backward computation inside each replica
+  is identical to the single-node graph.}
+  \label{fig:mlp_backward_dp}
+\end{figure}
+
+
+% ------------------------ 7.5 Communication and Memory ---------------
+\subsection{Communication and Memory Considerations}
+
+Compared to the single-node model in Section~\ref{sec:sn}:
+
+\begin{itemize}
+  \item \textbf{Memory per device.}
+        Each device stores a full copy of the model parameters and
+        optimizer states. Activation memory per device is reduced by a
+        factor of $N_D$ because each replica sees only a fraction of the
+        global batch.
+  \item \textbf{Communication pattern.}
+        DP introduces communication only at gradient synchronization time
+        (All-Reduce over parameter gradients). There is no communication
+        on the forward path and no communication for activations.
+  \item \textbf{Scalability.}
+        Increasing $N_D$ increases the effective batch size and reduces
+        the per-device compute and activation memory, but the cost of
+        All-Reduce grows with the number of replicas and the total
+        parameter size.
+  \item \textbf{Combination with other parallelism.}
+        In practice, DP is often combined with tensor parallelism (and
+        sometimes pipeline parallelism). In such settings, each data
+        parallel group contains several tensor-parallel shards; gradient
+        synchronization is then performed across data-parallel groups,
+        while tensor-parallel collectives remain local to each group.
+\end{itemize}
+
+From the perspective of the computation graphs in Section~\ref{sec:sn}, data
+parallelism is therefore the least invasive form of parallelism: it keeps
+the per-layer forward and backward structure unchanged and adds only
+gradient All-Reduces on top.

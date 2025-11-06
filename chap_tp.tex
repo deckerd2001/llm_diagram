@@ -1,0 +1,423 @@
+% ==========================================================
+% 6. Tensor Parallelism (TP)
+% ==========================================================
+\section{Tensor Parallelism (TP)}
+\label{sec:tp}
+
+In tensor parallelism, the parameters of each layer are partitioned across
+multiple devices along one or more tensor dimensions. Instead of
+replicating the full weight matrix on every device, each device holds only
+a shard of the weights and computes on a corresponding shard of the
+activations. Collective communication (e.g., All-Reduce, All-Gather) is
+then used to assemble partial results into the same shapes as in the
+single-node model of Section~\ref{sec:sn}.
+
+We denote the tensor-parallel degree by $N_T$, and index devices by
+$t \in \{0,\dots,N_T-1\}$. Throughout this section we focus on how the
+single-node computations from Section~\ref{sec:sn} are decomposed across these
+$N_T$ devices.
+
+\textbf{Key ideas.}
+\begin{itemize}
+  \item Large weight matrices are split along rows or columns so that each
+        device holds a sub-matrix $W^{(t)}$ instead of the full matrix $W$.
+  \item Each device computes local partial outputs using its own shard.
+  \item Collective operations (All-Reduce, All-Gather) combine local
+        partial results across devices into the same tensors that appear
+        in the single-node computation graph.
+  \item The backward pass mirrors the sharding and communication pattern
+        of the forward pass so that gradients with respect to parameters
+        and inputs are correctly accumulated.
+  \item Memory usage per device is reduced approximately by a factor of
+        $N_T$, but each global matmul incurs at least one collective
+        communication.
+\end{itemize}
+
+\subsection{Overview of Tensor-Parallel Sharding}
+
+At a high level, tensor parallelism can be seen as replacing every large
+matrix multiplication in Section~\ref{sec:sn} with a collection of smaller matmuls
+that run in parallel on different devices. There are two basic patterns
+for sharding a linear layer
+\[
+  \mathbf{Y} = \mathbf{X} W + \mathbf{b}, \qquad
+  \mathbf{X} \in \mathbb{R}^{B \times D_{\text{in}}},\;
+  W \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}}:
+\]
+\begin{itemize}
+  \item \textbf{Column-parallel (output-sharded) linear}: split $W$ along
+        the output dimension,
+        $W = [W^{(0)},\dots,W^{(N_T-1)}]$ with
+        $W^{(t)} \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}^{(t)}}$.
+        Each device computes
+        $\mathbf{Y}^{(t)} = \mathbf{X} W^{(t)} + \mathbf{b}^{(t)}$, and
+        the global output is obtained by concatenation:
+        \[
+          \mathbf{Y} = \mathrm{Concat}_t \mathbf{Y}^{(t)}.
+        \]
+        No collective is needed on the forward path, but later layers may
+        require an All-Gather or All-Reduce to reassemble or sum over
+        shards.
+  \item \textbf{Row-parallel (input-sharded) linear}: split $W$ along the
+        input dimension and shard $\mathbf{X}$ accordingly. Each device
+        holds $X^{(t)}$ and $W^{(t)}$ with
+        $W^{(t)} \in \mathbb{R}^{D_{\text{in}}^{(t)} \times D_{\text{out}}}$,
+        computes a partial product
+        $\mathbf{Y}^{(t)} = \mathbf{X}^{(t)} W^{(t)}$, and an All-Reduce
+        across $t$ produces the full output:
+        \[
+          \mathbf{Y} = \sum_{t=0}^{N_T-1} \mathbf{Y}^{(t)}.
+        \]
+\end{itemize}
+
+These two patterns are composed inside the Transformer so that most
+operations remain local to each device and only a small number of
+All-Reduce/All-Gather calls are required per layer. An overview of this
+scheme for a single Transformer block is shown in
+Figure~\ref{fig:tp_overall_flow}, which should be compared to the
+single-node overview in Figure~\ref{fig:single_node_overall}.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow_TP.tex}
+  \caption{Overall Transformer layer with tensor parallelism. Each large
+  linear layer from the single-node model is replaced by $N_T$ smaller
+  matmuls on different devices. Colored arrows indicate where collective
+  communication (e.g.\ All-Reduce, All-Gather) is required to assemble
+  partial results, while local computations remain identical to those in
+  Figure~\ref{fig:single_node_overall}.}
+  \label{fig:tp_overall_flow}
+\end{figure}
+
+% ------------------------ 6.1 MHA with Tensor Parallelism -------------
+\subsection{MHA with Tensor Parallelism}
+
+We now apply tensor parallelism to the multi-head attention (MHA) block.
+Recall from Section~\ref{sec:sn}.2 that the single-node attention block maps
+$\mathbf{X} \in [B,S,D]$ to
+$\mathbf{A}_{\text{out}} \in [B,S,D]$ via Q/K/V projections, scaled dot
+product attention, an output projection, and a residual connection.
+
+In tensor parallelism we partition these computations across $N_T$
+devices in such a way that:
+\begin{itemize}
+  \item each device is responsible for a subset of the attention heads, or
+        equivalently a subset of the output channels of the Q/K/V
+        projections;
+  \item the softmax and value-weighted sums are computed locally on each
+        device for its own heads;
+  \item the final output projection is implemented as a row-parallel
+        linear, requiring an All-Reduce across devices to recover the
+        same $\mathbf{A}_{\text{out}}$ as in the single-node case.
+\end{itemize}
+
+Figure~\ref{fig:mha_forward_tp} shows the forward data flow under this
+sharding scheme and should be read as a “TP-annotated” version of
+Figure~\ref{fig:single_node_mha_forward}. The corresponding backward
+graph is shown in Figure~\ref{fig:mha_backward_tp}.
+
+\subsubsection{Forward Pass}
+
+For clarity we focus on one Transformer block and omit batch/sequence
+dimensions in some formulas. We write the per-device Q/K/V projections as
+column-parallel linears:
+\[
+  W_Q = [W_Q^{(0)},\dots,W_Q^{(N_T-1)}],\quad
+  W_K = [W_K^{(0)},\dots,W_K^{(N_T-1)}],\quad
+  W_V = [W_V^{(0)},\dots,W_V^{(N_T-1)}],
+\]
+where, on device $t$,
+\[
+  W_Q^{(t)}, W_K^{(t)}, W_V^{(t)}
+    \in \mathbb{R}^{D \times D_h^{(t)}}, \qquad
+  \sum_t D_h^{(t)} = D.
+\]
+Each device computes local projections:
+\[
+  \mathbf{Q}^{(t)} = \mathbf{X}_{\text{norm}} W_Q^{(t)},\quad
+  \mathbf{K}^{(t)} = \mathbf{X}_{\text{norm}} W_K^{(t)},\quad
+  \mathbf{V}^{(t)} = \mathbf{X}_{\text{norm}} W_V^{(t)},
+\]
+and reshapes them into its own subset of attention heads. Because heads
+are independent, each device can compute the scaled dot-product attention
+for its local heads without communication:
+\[
+  \mathbf{S}^{(t)} = \frac{\mathbf{Q}^{(t)} (\mathbf{K}^{(t)})^{\top}}
+                           {\sqrt{D_h^{(t)}}},\qquad
+  \mathbf{A}_S^{(t)} = \mathrm{Softmax}(\mathrm{Mask}(\mathbf{S}^{(t)})),
+\]
+\[
+  \mathbf{A}_{\text{heads}}^{(t)} = \mathbf{A}_S^{(t)} \mathbf{V}^{(t)}.
+\]
+
+After computing local head outputs, each device forms a local
+concatenation
+$\mathbf{A}_{\text{cat}}^{(t)} \in \mathbb{R}^{B \times S \times D^{(t)}}$
+over its subset of heads. The final output projection is implemented as a
+\emph{row-parallel} linear:
+\[
+  W_O = \begin{bmatrix} W_O^{(0)} \\ \vdots \\ W_O^{(N_T-1)} \end{bmatrix},
+  \quad W_O^{(t)} \in \mathbb{R}^{D^{(t)} \times D}.
+\]
+Each device computes a partial contribution
+\[
+  \mathbf{A}_{\text{lin}}^{(t)}
+    = \mathbf{A}_{\text{cat}}^{(t)} W_O^{(t)} + \mathbf{b}_O^{(t)},
+\]
+and an All-Reduce across $t$ yields the full projected tensor
+\[
+  \mathbf{A}_{\text{lin}}
+    = \sum_{t=0}^{N_T-1} \mathbf{A}_{\text{lin}}^{(t)}.
+\]
+Dropout and the residual connection with $\mathbf{X}$ are then applied
+locally on each device, since after the All-Reduce every device holds the
+same $\mathbf{A}_{\text{lin}}$ and $\mathbf{X}$.
+
+These steps, together with the location of the All-Reduce, are annotated
+explicitly in Figure~\ref{fig:mha_forward_tp}.
+
+\begin{landscape}
+\begin{figure}[p]
+  \centering
+  \input{mha_forward_TP.tex}
+  \caption{Multi-head attention forward pass with tensor parallelism. Q/K/V
+  projections are implemented as column-parallel linears so that each
+  device owns a subset of the heads. Attention for each local head is
+  computed independently, and the resulting head outputs are combined
+  using a row-parallel output projection followed by an All-Reduce to
+  recover the same $\mathbf{A}_{\text{out}}$ as in the single-node
+  computation.}
+  \label{fig:mha_forward_tp}
+\end{figure}
+\end{landscape}
+
+\subsubsection{Backward Pass}
+
+The backward pass for tensor-parallel MHA follows the same high-level
+structure as in Section~\ref{sec:sn}.2, but with sharded gradients and explicit
+collectives. Starting from
+$\mathrm{d}\mathbf{A}_{\text{out}}$ on each device, we have:
+
+\begin{itemize}
+  \item \textbf{Output projection backward.}
+        The row-parallel output projection produces local gradients
+        $\mathrm{d}\mathbf{A}_{\text{cat}}^{(t)}$ and parameter gradients
+        $\mathrm{d}W_O^{(t)}, \mathrm{d}\mathbf{b}_O^{(t)}$ from
+        $\mathrm{d}\mathbf{A}_{\text{lin}}$.
+  \item \textbf{Head backward.}
+        Each device backpropagates through its local heads, computing
+        $\mathrm{d}\mathbf{V}^{(t)}$ and $\mathrm{d}\mathbf{A}_S^{(t)}$,
+        and then $\mathrm{d}\mathbf{Q}^{(t)}$ and
+        $\mathrm{d}\mathbf{K}^{(t)}$ through the scaled dot-product and
+        softmax.
+  \item \textbf{Q/K/V projection backward.}
+        The column-parallel Q/K/V linears produce local gradients
+        $\mathrm{d}W_Q^{(t)}, \mathrm{d}W_K^{(t)}, \mathrm{d}W_V^{(t)}$
+        and partial contributions to the gradient w.r.t.\ the normalized
+        input, $\mathrm{d}\mathbf{X}_{\text{norm}}^{(t)}$.
+  \item \textbf{All-Reduce for input gradient.}
+        Because $\mathbf{X}_{\text{norm}}$ is shared across devices,
+        gradients from all Q/K/V shards must be summed:
+        \[
+          \mathrm{d}\mathbf{X}_{\text{norm}}
+            = \sum_{t=0}^{N_T-1} \mathrm{d}\mathbf{X}_{\text{norm}}^{(t)},
+        \]
+        implemented as an All-Reduce over $t$.
+  \item \textbf{Layer normalization backward.}
+        Finally, layer normalization backward is applied locally on each
+        device to produce $\mathrm{d}\mathbf{X}$ and gradients for the LN
+        parameters, exactly as in the single-node setting.
+\end{itemize}
+
+Figure~\ref{fig:mha_backward_tp} expands these steps into a full
+computation graph, with each All-Reduce/All-Gather explicitly indicated.
+
+\begin{landscape}
+\begin{figure}[p]
+  % no \centering here to avoid compilation issues
+  \input{mha_backward_TP.tex}
+  \caption{Multi-head attention backward pass with tensor parallelism.
+  Each device backpropagates through its local Q/K/V projections and
+  attention heads. Gradients with respect to the shared normalized input
+  are summed across devices via All-Reduce, and parameter gradients are
+  accumulated locally for each shard $W_Q^{(t)}, W_K^{(t)}, W_V^{(t)}$ and
+  $W_O^{(t)}$.}
+  \label{fig:mha_backward_tp}
+\end{figure}
+\end{landscape}
+
+% ------------------------ 6.2 MLP with Tensor Parallelism -------------
+\subsection{MLP with Tensor Parallelism}
+
+The feed-forward (MLP) block is particularly well-suited to tensor
+parallelism because its two linear layers can be implemented as a
+column-parallel / row-parallel pair. Recall from Section~\ref{sec:sn}.3 that the
+single-node MLP maps
+$\mathbf{H} \in [B,S,D]$ to $\mathbf{Y} \in [B,S,D]$ via
+\[
+  \mathbf{Z}_{\text{up}} = \mathbf{H} W_{\text{up}} + \mathbf{b}_{\text{up}},
+  \quad \mathbf{U} = \phi(\mathbf{Z}_{\text{up}}),
+\]
+\[
+  \mathbf{Z}_{\text{down}} = \mathbf{U} W_{\text{down}} + \mathbf{b}_{\text{down}},
+  \quad \mathbf{Y} = \mathbf{H} + \mathrm{Dropout}(\mathbf{Z}_{\text{down}}),
+\]
+where $W_{\text{up}} \in \mathbb{R}^{D \times D_{\text{ff}}}$ and
+$W_{\text{down}} \in \mathbb{R}^{D_{\text{ff}} \times D}$.
+
+In tensor parallelism we choose:
+\begin{itemize}
+  \item \textbf{Up-projection}: column-parallel (output-sharded).
+  \item \textbf{Down-projection}: row-parallel (input-sharded).
+\end{itemize}
+This combination ensures that only one collective is required in the
+forward pass and one in the backward pass, while keeping most of the
+activation tensors local.
+
+Figure~\ref{fig:mlp_forward_tp} shows the resulting forward data flow, and
+Figure~\ref{fig:mlp_backward_tp} shows the corresponding backward
+computation.
+
+\subsubsection{Forward Pass}
+
+We split the up-projection weight along its output dimension:
+\[
+  W_{\text{up}} = [W_{\text{up}}^{(0)},\dots,W_{\text{up}}^{(N_T-1)}],\quad
+  W_{\text{up}}^{(t)} \in \mathbb{R}^{D \times D_{\text{ff}}^{(t)}},
+  \qquad \sum_t D_{\text{ff}}^{(t)} = D_{\text{ff}}.
+\]
+Each device computes a local up-projection:
+\[
+  \mathbf{Z}_{\text{up}}^{(t)}
+    = \mathbf{H} W_{\text{up}}^{(t)} + \mathbf{b}_{\text{up}}^{(t)},
+  \qquad
+  \mathbf{U}^{(t)} = \phi(\mathbf{Z}_{\text{up}}^{(t)}),
+\]
+where $\phi$ is the non-linearity (e.g., GELU). No communication is
+required at this stage, because each device only needs its own local slice
+$\mathbf{U}^{(t)}$ to proceed.
+
+Next, we implement the down-projection as a row-parallel linear:
+\[
+  W_{\text{down}}
+    = \begin{bmatrix} W_{\text{down}}^{(0)} \\ \vdots \\ W_{\text{down}}^{(N_T-1)} \end{bmatrix},
+  \quad W_{\text{down}}^{(t)} \in \mathbb{R}^{D_{\text{ff}}^{(t)} \times D}.
+\]
+Each device computes a partial contribution
+\[
+  \mathbf{Z}_{\text{down}}^{(t)}
+    = \mathbf{U}^{(t)} W_{\text{down}}^{(t)} + \mathbf{b}_{\text{down}}^{(t)},
+\]
+and an All-Reduce across $t$ yields the full down-projection output:
+\[
+  \mathbf{Z}_{\text{down}}
+    = \sum_{t=0}^{N_T-1} \mathbf{Z}_{\text{down}}^{(t)}.
+\]
+Dropout and the residual connection with $\mathbf{H}$ are then applied
+locally, as every device has the same $\mathbf{Z}_{\text{down}}$ and
+$\mathbf{H}$ after the All-Reduce.
+
+These steps are summarized in Figure~\ref{fig:mlp_forward_tp}, where the
+only collective in the forward path is the All-Reduce after the
+down-projection.
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_forward_TP.tex}
+  \caption{MLP forward pass with tensor parallelism. The up-projection is
+  implemented as a column-parallel linear so that each device holds a
+  subset of the intermediate features. The down-projection is
+  row-parallel, and an All-Reduce over devices reconstructs the full
+  $\mathbf{Z}_{\text{down}}$, after which dropout and the residual
+  connection are applied locally.}
+  \label{fig:mlp_forward_tp}
+\end{figure}
+
+\subsubsection{Backward Pass}
+
+The backward pass for the tensor-parallel MLP reuses the same structure as
+the single-node backward graph (Figure~\ref{fig:single_node_mlp_backward}),
+but with sharded parameters and explicit All-Reduce operations.
+
+Starting from $\mathrm{d}\mathbf{Y}$ on each device:
+
+\begin{enumerate}
+  \item \textbf{Residual and dropout backward}: as before, gradients are
+        split between the identity path and the path through the final
+        dropout, yielding $\mathrm{d}\mathbf{Z}_{\text{down}}$ on each
+        device.
+  \item \textbf{Down-projection backward (row-parallel)}: each device
+        computes local gradients
+        $\mathrm{d}\mathbf{U}^{(t)}$ and parameter gradients
+        $\mathrm{d}W_{\text{down}}^{(t)}, \mathrm{d}\mathbf{b}_{\text{down}}^{(t)}$
+        using its own shard $W_{\text{down}}^{(t)}$ and local activations
+        $\mathbf{U}^{(t)}$. No communication is needed to form
+        $\mathrm{d}\mathbf{U}^{(t)}$.
+  \item \textbf{Activation backward}: the non-linearity $\phi$ is
+        inverted elementwise on each device to obtain
+        $\mathrm{d}\mathbf{Z}_{\text{up}}^{(t)}$.
+  \item \textbf{Up-projection backward (column-parallel)}:
+        for the column-parallel up-projection, each device computes local
+        contributions to the gradient with respect to $W_{\text{up}}^{(t)}$
+        and a partial gradient w.r.t.\ the input $\mathrm{d}\mathbf{H}^{(t)}$.
+        Because $\mathbf{H}$ is shared across devices, we must sum these
+        partial gradients:
+        \[
+          \mathrm{d}\mathbf{H}
+            = \sum_{t=0}^{N_T-1} \mathrm{d}\mathbf{H}^{(t)},
+        \]
+        implemented as an All-Reduce over $t$.
+  \item \textbf{Layer normalization backward (if present)}: if the MLP is
+        preceded by a layer normalization (as in a pre-LN Transformer),
+        its backward pass is applied locally using the aggregated
+        $\mathrm{d}\mathbf{H}$.
+\end{enumerate}
+
+Figure~\ref{fig:mlp_backward_tp} shows these steps, highlighting the
+All-Reduce on $\mathrm{d}\mathbf{H}$ (the only collective required in the
+MLP backward pass).
+
+\begin{figure}[htbp]
+  % no \centering here to avoid compilation issues
+  \input{mlp_backward_TP.tex}
+  \caption{MLP backward pass with tensor parallelism. Each device
+  backpropagates through its local up- and down-projection shards. The
+  only collective in the backward path is an All-Reduce that sums the
+  partial input gradients $\mathrm{d}\mathbf{H}^{(t)}$ across devices to
+  obtain the full $\mathrm{d}\mathbf{H}$. Parameter gradients remain
+  local to each shard.}
+  \label{fig:mlp_backward_tp}
+\end{figure}
+
+
+% ------------------------ 6.3 Communication Summary ------------------
+\subsection{Communication Patterns and Costs}
+
+Finally, we summarize where collective communication appears in the
+tensor-parallel Transformer layer:
+
+\begin{itemize}
+  \item \textbf{MHA forward:}
+        an All-Reduce after the row-parallel output projection to obtain
+        $\mathbf{A}_{\text{lin}}$ on every device
+        (Figure~\ref{fig:mha_forward_tp}).
+  \item \textbf{MHA backward:}
+        an All-Reduce on $\mathrm{d}\mathbf{X}_{\text{norm}}$ to sum
+        gradient contributions from all Q/K/V shards
+        (Figure~\ref{fig:mha_backward_tp}).
+  \item \textbf{MLP forward:}
+        an All-Reduce after the row-parallel down-projection to form
+        $\mathbf{Z}_{\text{down}}$
+        (Figure~\ref{fig:mlp_forward_tp}).
+  \item \textbf{MLP backward:}
+        an All-Reduce on the input gradient $\mathrm{d}\mathbf{H}$ from
+        the column-parallel up-projection
+        (Figure~\ref{fig:mlp_backward_tp}).
+\end{itemize}
+
+In all cases, the local computation on each device is structurally
+identical to the single-node computation described in Section~\ref{sec:sn}; only the
+placement of collectives and the sharding of weights and activations
+differ. This makes tensor parallelism a natural extension of the
+single-node Transformer, well suited for large models that do not fit into
+the memory of a single accelerator.

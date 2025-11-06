@@ -13,7 +13,7 @@
     dimlabel/.style={font=\tiny, inner sep=1pt, align=center},
     gradlabel/.style={font=\tiny\bfseries, inner sep=1pt, align=center}
 ]
-    \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass (Node $i$)};
+    % \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass (Node $i$)};
 
     \pgfmathsetmacro{\backwardoffset}{0.0}
 
@@ -35,10 +35,10 @@
     \draw[flow_rev] (d_L2Mul_in) -- (d_Drop2)
       node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{down}}$\\$=\mathrm{d}\mathbf{A}_{\text{out}}$\\$[B,S,D]$}};
 
-    \node[dimlabel] (W_down_T) [align=center, below=2.0cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{(i)T}$\\$[D, D_{ff}/N_T]$\\(row-split)};
+    \node[dimlabel] (W_down_T) [align=center, below=1.0cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{(i)T}$\\$[D, D_{ff}/N_T]$\\(row-split)};
     \draw[flow_act] (W_down_T.north) -- (d_L2Mul_in);
 
-    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 3.5cm)$);
+    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 2.5cm)$);
     \node[mulnode] (d_L2Mul_w) at (L2Mul_w_y) {$\bullet$};
     \node (d_Wdown) [align=center, above=0.9cm of d_L2Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{down}}^{(i)}$\\$[D_{ff}/N_T, D]$};
     \draw[flow_dw] (d_L2Mul_w) -- (d_Wdown);
@@ -75,7 +75,7 @@
     \node[dimlabel] (W_up_T) [align=center, below=1.0cm of d_L1Mul_in] {$\tilde{\mathbf{W}}_{\text{up}}^{(i)T}$\\$[D_{ff}/N_T, D]$\\(col-split)};
     \draw[flow_act] (W_up_T.north) -- (d_L1Mul_in);
 
-    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 3.5cm)$);
+    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 2.5cm)$);
     \node[mulnode] (d_L1Mul_w) at (L1Mul_w_y) {$\bullet$};
     \node (d_Wup) [align=center, above=0.9cm of d_L1Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{up}}^{(i)}$\\$[D, D_{ff}/N_T]$};
     \draw[flow_dw] (d_L1Mul_w) -- (d_Wup);

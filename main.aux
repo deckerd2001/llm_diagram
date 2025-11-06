@@ -1,63 +1,133 @@
 \relax 
-\@writefile{toc}{\contentsline {section}{\numberline {1}Neural Network Basics}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}What is a Neural Network?}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Fully-Connected Layers and MLPs}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Backpropagation at a Glance}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {2}From Neural Networks to Transformers}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Sequence Modeling Motivation}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}The Self-Attention Idea}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3}Gradients and Backpropagation Basics}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Scalar Loss and Gradient Notation}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Single-Input Nodes and Backward Operators}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Nodes with Multiple Inputs}{6}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Computation Graph and Backpropagation}{7}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Parameter Gradients and Updates}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Connection to the Diagrams}{8}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Graphical Notation and Figure Conventions}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Tensor Shapes and Index Notation}{9}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Nodes, Edges, and Arrow Styles}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Forward vs. Backward Arrows}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Node Types}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Matrix multiplication.}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Addition and residuals.}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Generic rectangular operators.}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Communication nodes.}{10}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Forward and Backward Nodes: Abstract View}{11}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Operator Dictionary: Forward and Backward}{11}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.1}Matrix Multiplication (Matmul)}{12}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.2}Broadcast (BC)}{12}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.3}Scale/Mask Node (SM, dSM)}{12}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.4}Softmax Node (S, dS)}{13}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.5}Nonlinearities and Dropout (GL, dGL, DO, dDO)}{13}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.6}Layer Normalization (LN, dLN)}{13}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.7}Communication Nodes (AR, AG)}{14}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Reading the Detailed MHA and MLP Figures}{14}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5}Single-Node Transformer: Forward and Backward}{14}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Overall Transformer Layer Flow}{15}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Input Embedding Layer}{16}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Forward Pass}{16}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Multi-Head Attention (MHA)}{17}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.1}Forward Pass}{17}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.2}Backward Pass}{19}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Feed-Forward Network (MLP / FFN)}{21}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.1}Forward Pass}{21}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.2}Backward Pass}{22}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Output Projection and Loss}{23}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.1}Forward Pass (Logits, Softmax, Loss)}{23}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.2}Backward Pass}{24}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Tensor Parallelism (TP)}{25}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}TP Overview and End-to-End Flow}{25}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MHA with Tensor Parallelism}{26}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.1}Forward Pass}{26}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.2}Backward Pass}{28}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}MLP with Tensor Parallelism}{30}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.1}Forward Pass}{30}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.2}Backward Pass}{31}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Data Parallelism (DP)}{32}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}DP Overview and Transformer Flow}{32}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}MHA Backward under DP}{33}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}MLP Backward under DP}{34}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Hybrid Data + Tensor Parallelism (DP + TP)}{35}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}DP+TP Overview and Communication Patterns}{35}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {9}Summary and Practical Takeaways}{36}{}\protected@file@percent }
-\gdef \@abspage@last{36}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Scope and Goals}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Intended Audience}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Structure of the Document}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Background: Neural Networks and Transformers}{7}{}\protected@file@percent }
+\newlabel{sec:background}{{2}{7}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Basic Notation and Tensors}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Linear Layers and MLP Blocks}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Sequence Modeling and Self-Attention}{8}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Standard Transformer Block Structure}{9}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Connection to the Rest of the Document}{9}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Gradients and Backpropagation Basics}{10}{}\protected@file@percent }
+\newlabel{sec:gradients-basics}{{3}{10}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Scalar Loss and Gradient Notation}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Single-Input Nodes and Backward Operators}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Nodes with Multiple Inputs}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Computational Cost: Forward vs. Backward}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Computation Graph and Backpropagation}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Parameter Gradients and Updates}{14}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Connection to the Diagrams}{15}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Graphical Notation and Figure Conventions}{16}{}\protected@file@percent }
+\newlabel{sec:graph-conventions}{{4}{16}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Tensor Shapes and Index Notation}{16}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Nodes, Edges, and Arrow Styles}{16}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Forward vs. Backward Arrows}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Node Types}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Matrix multiplication.}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Addition and residuals.}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Generic rectangular operators.}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Communication nodes.}{17}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Forward and Backward Nodes: Abstract View}{18}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Operator Dictionary: Forward and Backward}{18}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.1}Matrix Multiplication (Matmul)}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.2}Broadcast (BC)}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.3}Scale/Mask Node (SM, dSM)}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.4}Softmax Node (S, dS)}{20}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.5}Nonlinearities and Dropout (GL, dGL, DO, dDO)}{20}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.6}Layer Normalization (LN, dLN)}{20}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.7}Communication Nodes (AR, AG)}{21}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Reading the Detailed MHA and MLP Figures}{21}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Single-Node Transformer: Forward and Backward}{22}{}\protected@file@percent }
+\newlabel{sec:sn}{{5}{22}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Overall Transformer Layer Flow}{22}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Single-node Transformer layer: overall forward and backward flow. Solid arrows denote forward activations, and dashed arrows denote gradients flowing backward from the loss $\mathcal  {L}$ through the output projection, MLP, MHA, and back to the input embeddings.}}{22}{}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:single_node_overall}{{1}{22}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Input Embedding Layer}{23}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Forward Pass}{23}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Input embedding forward pass. Token IDs are mapped to token embeddings using $\mathbf  {E}$, positional embeddings $\mathbf  {P}$ are added, and optional dropout yields the initial hidden states $\mathbf  {X} \in [B,S,D]$.}}{23}{}\protected@file@percent }
+\newlabel{fig:single_node_input_embedding}{{2}{23}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Multi-Head Attention (MHA)}{24}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.1}Forward Pass}{24}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{(1) Layer normalization on the input.}{24}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{(2) Linear projections to Q, K, V.}{24}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{(3) Scaled dot-product attention per head.}{24}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{(4) Head concatenation and output projection.}{25}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{(5) Dropout and residual connection.}{25}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Multi-head attention forward pass on a single node. Input activations $\mathbf  {X}$ are layer-normalized, projected to $\mathbf  {Q}$, $\mathbf  {K}$, and $\mathbf  {V}$, processed by scaled dot-product attention over the sequence, concatenated across heads, and projected back to $[B,S,D]$ with an output projection and residual connection.}}{26}{}\protected@file@percent }
+\newlabel{fig:single_node_mha_forward}{{3}{26}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.2}Backward Pass}{27}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Multi-head attention backward pass. The diagram shows how gradients from $\mathrm  {d}\mathbf  {A}_{\text  {out}}$ are propagated through the output projection, attention heads, QKV projection matrices, and layer normalization to yield $\mathrm  {d}\mathbf  {X}$ and all associated weight and bias gradients.}}{28}{}\protected@file@percent }
+\newlabel{fig:single_node_mha_backward}{{4}{28}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Feed-Forward Network (MLP / FFN)}{29}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.1}Forward Pass}{29}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Feed-forward (MLP) forward pass. Hidden states are layer-normalized, projected up to dimension $D_{\text  {ff}}$, passed through a non-linearity and dropout, projected back to $D$, and combined with the input via a residual connection.}}{29}{}\protected@file@percent }
+\newlabel{fig:single_node_mlp_forward}{{5}{29}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.2}Backward Pass}{29}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Feed-forward (MLP) backward pass. The figure shows how $\mathrm  {d}\mathbf  {Y}$ splits through the residual and FFN path, and how gradients flow through the down-projection, activation, up-projection, and layer normalization to yield $\mathrm  {d}\mathbf  {X}'$ and the corresponding parameter gradients.}}{30}{}\protected@file@percent }
+\newlabel{fig:single_node_mlp_backward}{{6}{30}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Output Projection and Loss}{30}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.1}Forward Pass (Logits, Softmax, Loss)}{30}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Output projection and loss: the final hidden states $\mathbf  {A}_{\text  {out}}$ are mapped to logits by the language model head $(\mathbf  {W}_{\text  {lm}}, \mathbf  {b}_{\text  {lm}})$, converted to probabilities by softmax, and compared with target tokens using cross-entropy.}}{30}{}\protected@file@percent }
+\newlabel{fig:single_node_output_forward}{{7}{30}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.2}Backward Pass}{30}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Output projection backward pass. Gradients from the loss are propagated through cross-entropy and softmax to the logits, then through the language model projection to produce $\mathrm  {d}\mathbf  {A}_{\text  {out}}$ and parameter gradients $\mathrm  {d}\mathbf  {W}_{\text  {lm}}$ and $\mathrm  {d}\mathbf  {b}_{\text  {lm}}$.}}{31}{}\protected@file@percent }
+\newlabel{fig:single_node_output_backward}{{8}{31}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Tensor Parallelism (TP)}{32}{}\protected@file@percent }
+\newlabel{sec:tp}{{6}{32}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Overview of Tensor-Parallel Sharding}{32}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Overall Transformer layer with tensor parallelism. Each large linear layer from the single-node model is replaced by $N_T$ smaller matmuls on different devices. Colored arrows indicate where collective communication (e.g.\ All-Reduce, All-Gather) is required to assemble partial results, while local computations remain identical to those in Figure~\ref {fig:single_node_overall}.}}{33}{}\protected@file@percent }
+\newlabel{fig:tp_overall_flow}{{9}{33}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MHA with Tensor Parallelism}{34}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.1}Forward Pass}{34}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Multi-head attention forward pass with tensor parallelism. Q/K/V projections are implemented as column-parallel linears so that each device owns a subset of the heads. Attention for each local head is computed independently, and the resulting head outputs are combined using a row-parallel output projection followed by an All-Reduce to recover the same $\mathbf  {A}_{\text  {out}}$ as in the single-node computation.}}{35}{}\protected@file@percent }
+\newlabel{fig:mha_forward_tp}{{10}{35}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.2.2}Backward Pass}{36}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Multi-head attention backward pass with tensor parallelism. Each device backpropagates through its local Q/K/V projections and attention heads. Gradients with respect to the shared normalized input are summed across devices via All-Reduce, and parameter gradients are accumulated locally for each shard $W_Q^{(t)}, W_K^{(t)}, W_V^{(t)}$ and $W_O^{(t)}$.}}{37}{}\protected@file@percent }
+\newlabel{fig:mha_backward_tp}{{11}{37}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}MLP with Tensor Parallelism}{38}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.1}Forward Pass}{38}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces MLP forward pass with tensor parallelism. The up-projection is implemented as a column-parallel linear so that each device holds a subset of the intermediate features. The down-projection is row-parallel, and an All-Reduce over devices reconstructs the full $\mathbf  {Z}_{\text  {down}}$, after which dropout and the residual connection are applied locally.}}{39}{}\protected@file@percent }
+\newlabel{fig:mlp_forward_tp}{{12}{39}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {6.3.2}Backward Pass}{39}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Communication Patterns and Costs}{39}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces MLP backward pass with tensor parallelism. Each device backpropagates through its local up- and down-projection shards. The only collective in the backward path is an All-Reduce that sums the partial input gradients $\mathrm  {d}\mathbf  {H}^{(t)}$ across devices to obtain the full $\mathrm  {d}\mathbf  {H}$. Parameter gradients remain local to each shard.}}{40}{}\protected@file@percent }
+\newlabel{fig:mlp_backward_tp}{{13}{40}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Data Parallelism (DP)}{41}{}\protected@file@percent }
+\newlabel{sec:dp}{{7}{41}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Overall DP Training Flow}{41}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Overall Transformer layer under data parallelism. Each device holds a full copy of the model and processes a different shard of the input batch ($\mathbf  {X}_i$, $\mathbf  {X}_j$, \dots  ). Forward and backward passes are performed locally as in the single-node case, and gradients for each block (MHA, MLP, output projection) are synchronized across replicas via All-Reduce.}}{42}{}\protected@file@percent }
+\newlabel{fig:dp_overall_flow}{{14}{42}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Relationship to the Single-Node Computation}{42}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}MHA Backward under DP}{43}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Multi-head attention backward pass under data parallelism. Each replica computes local gradients w.r.t.\ $W_Q$, $W_K$, $W_V$, and $W_O$ using its own mini-batch. Red dashed arrows indicate All-Reduce operations that aggregate these local gradients across all data-parallel replicas to form the global gradients used by the optimizer. The internal structure of the backward graph matches the single-node case.}}{44}{}\protected@file@percent }
+\newlabel{fig:mha_backward_dp}{{15}{44}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}MLP Backward under DP}{45}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Communication and Memory Considerations}{45}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces MLP backward pass under data parallelism. Each replica computes local gradients for the up- and down-projection weights and biases using its own mini-batch. Red boxes and dashed arrows indicate All-Reduce operations that aggregate these local parameter gradients across replicas. The structure of the backward computation inside each replica is identical to the single-node graph.}}{46}{}\protected@file@percent }
+\newlabel{fig:mlp_backward_dp}{{16}{46}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Combining Data Parallelism (DP) and Tensor Parallelism (TP)}{47}{}\protected@file@percent }
+\newlabel{sec:dp_tp}{{8}{47}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Parallel Groups and Layout}{47}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}From Single-Node to TP to DP+TP}{47}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Single node (Section~\ref {sec:sn}).}{47}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Overall Transformer layer with combined data and tensor parallelism. Horizontally, each tensor-parallel group of size $N_T$ jointly implements a sharded version of the layer (as in Section~\ref {sec:tp}). Vertically, $N_D$ such groups form a data-parallel grid: each row processes a different mini-batch shard, and gradients are synchronized across rows. All-Reduce and All-Gather collectives are annotated where they appear.}}{48}{}\protected@file@percent }
+\newlabel{fig:dp_tp_overall_flow}{{17}{48}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Tensor parallelism only (Section~\ref {sec:tp}).}{49}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Data parallelism only (Section~\ref {sec:dp}).}{49}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Combining DP and TP.}{49}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Forward Pass under DP+TP}{49}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Backward Pass and Gradient Synchronization}{50}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.5}Communication Summary and Differences from TP-only / DP-only}{50}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Compared to TP-only.}{51}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Compared to DP-only.}{51}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Summary and Practical Takeaways}{52}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}From Gradients to Graphs to Transformers}{52}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Cost and Memory: What Really Matters}{52}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Single-Node vs.\ TP vs.\ DP vs.\ DP+TP}{53}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Reading and Using the Diagrams}{53}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}Practical Rules of Thumb}{54}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.6}Where to Go Next}{54}{}\protected@file@percent }
+\gdef \@abspage@last{54}

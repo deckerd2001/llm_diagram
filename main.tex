@@ -20,261 +20,84 @@
 % ------------------------ Document ------------------------
 \begin{document}
 
-\title{Transformer Parallelism:\\
-       A Visual, Dimension-Oriented Guide}
-\author{}
-\date{November 4, 2025}
+\title{A Visual, Dimension-Oriented Guide to\\ Transformer Parallelism}
+\author{
+  Kyungho Kim, Jeehoon Kim, Wonsuk Lee\\
+  SK hynix US AI Solutions Tech.
+}
+\date{November 6, 2025}
 \maketitle
 
+\clearpage
+
 \tableofcontents
-\clearpage
-
-% ==========================================================
-% 1. Neural Network Basics
-% ==========================================================
-\section{Neural Network Basics}
-
-In this section, we briefly introduce the core ideas of neural networks
-for readers with no prior background. We cover the notion of tensors,
-linear layers, activation functions, and the backpropagation algorithm
-at a high level.
-
-\subsection{What is a Neural Network?}
-Here we describe the basic idea of a neural network as a composition of
-linear transformations and non-linear activation functions, operating
-on vector or matrix inputs.
-
-\subsection{Fully-Connected Layers and MLPs}
-We introduce the multi-layer perceptron (MLP):
-\begin{itemize}
-  \item Input/output shapes $[B, D]$.
-  \item Linear layer $W \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}}$,
-        bias $b \in \mathbb{R}^{D_{\text{out}}}$.
-  \item Activation functions such as ReLU or GELU.
-\end{itemize}
-This provides the foundation for understanding the Transformer MLP block.
-
-\subsection{Backpropagation at a Glance}
-We explain the key idea of backpropagation:
-\begin{itemize}
-  \item Gradients flowing from the loss to earlier layers.
-  \item Parameter updates using optimizers such as SGD or Adam.
-\end{itemize}
-The detailed backward diagrams in later sections are concrete instances
-of this general principle.
+\listoffigures
+% \listoftables
 
 \clearpage
 
 % ==========================================================
-% 2. From Neural Networks to Transformers
+% 1. Introduction
 % ==========================================================
-\section{From Neural Networks to Transformers}
 
-\subsection{Sequence Modeling Motivation}
-We consider sequence modeling tasks such as natural language processing,
-time series forecasting, and speech processing. In these settings the
-input is not a single vector but a \emph{sequence} of tokens, each of
-which is mapped to an embedding. The model must capture dependencies
-both between nearby tokens and between tokens that are far apart in
-the sequence.
+\input{chap_intro.tex}
+\clearpage
 
-\subsection{The Self-Attention Idea}
-Transformers address sequence modeling by using self-attention instead
-of explicit recurrence. At a high level:
-\begin{itemize}
-  \item Each token is mapped to an input embedding.
-  \item Self-attention allows every position to attend to every other
-        position in the same sequence.
-  \item Multi-head attention (MHA) uses several attention ``heads'' in
-        parallel to capture different types of relationships.
-  \item A position-wise feed-forward network (MLP block) processes each
-        token independently after attention.
-  \item Layer normalization, residual connections, and an output
-        projection tie the blocks together and produce final logits or
-        predictions.
-\end{itemize}
 
-In the following sections we make these ideas concrete using
-dimension-annotated diagrams of a Transformer layer and its parallel
-variants.
+% ==========================================================
+% 2. Background: Neural Networks and Transformers
+% ==========================================================
+
+\input{chap_background.tex}
 
 \clearpage
 
+% ==========================================================
+% 3. Gradients and Backpropagation Basics
+% ==========================================================
 \input{chap_gradients_basics.tex}
 
+\clearpage
+
+% ==========================================================
+% 4. Graphical Notation and Figure Conventions
+% ==========================================================
 \input{chap_graph_conventions.tex}
 
+\clearpage
+
 % ==========================================================
-% 4. Single-Node Transformer: Forward and Backward
+% 5. Single-Node Transformer: Forward and Backward
 % ==========================================================
-\section{Single-Node Transformer: Forward and Backward}
-
-This section presents the full Transformer layer running on a single node
-(no parallelism). We emphasize tensor shapes and data flow for both
-forward and backward passes.
-
-\subsection{Overall Transformer Layer Flow}
-\input{transformer_overall_flow.tex}
-
-\clearpage
-
-% ------------------------ 4.1 Input Embedding ------------------------
-\subsection{Input Embedding Layer}
-
-\subsubsection{Forward Pass}
-\input{input_embedding.tex}
-
-\clearpage
-
-\clearpage
-
-% ------------------------ 4.2 Multi-Head Attention -------------------
-\subsection{Multi-Head Attention (MHA)}
-
-Multi-Head Attention enables the model to jointly attend to information
-from different representation subspaces.
-
-\subsubsection{Forward Pass}
-
-\begin{landscape}
-\thispagestyle{fancy}
-\input{mha_forward.tex}
-\end{landscape}
-\clearpage
-
-\subsubsection{Backward Pass}
-
-\begin{landscape}
-\thispagestyle{fancy}
-\input{mha_backward.tex}
-\end{landscape}
-\clearpage
-
-% ------------------------ 4.3 MLP / FFN Block ------------------------
-\subsection{Feed-Forward Network (MLP / FFN)}
-
-\subsubsection{Forward Pass}
-\input{mlp_forward.tex}
-
-\clearpage
-
-\subsubsection{Backward Pass}
-\input{mlp_backward.tex}
-
-\clearpage
-
-% ------------------------ 4.4 Output Projection & Loss ---------------
-\subsection{Output Projection and Loss}
-
-\subsubsection{Forward Pass (Logits, Softmax, Loss)}
-\input{output_proj.tex}
-
-\clearpage
-
-\subsubsection{Backward Pass}
-\input{output_proj_backward.tex}
+\input{chap_single_node_transformer.tex}
 
 \clearpage
 
 % ==========================================================
-% 5. Tensor Parallelism (TP)
+% 6. Tensor Parallelism (TP)
 % ==========================================================
-\section{Tensor Parallelism (TP)}
 
-In tensor parallelism, weight matrices are partitioned across multiple
-devices along certain dimensions. Each device computes on its own shard,
-and collective operations (e.g., All-Reduce, All-Gather) synchronize
-intermediate results.
-
-\subsection{TP Overview and End-to-End Flow}
-\input{transformer_overall_flow_TP.tex}
-
+\input{chap_tp.tex}
 \clearpage
 
-\subsection{MHA with Tensor Parallelism}
-
-\subsubsection{Forward Pass}
-
-\begin{landscape}
-\thispagestyle{fancy}
-\input{mha_forward_TP.tex}
-\end{landscape}
-\clearpage
-
-\subsubsection{Backward Pass}
-
-\begin{landscape}
-\thispagestyle{fancy}
-\input{mha_backward_TP.tex}
-\end{landscape}
-\clearpage
-
-\subsection{MLP with Tensor Parallelism}
-
-\subsubsection{Forward Pass}
-\input{mlp_forward_TP.tex}
-
-\clearpage
-
-\subsubsection{Backward Pass}
-\input{mlp_backward_TP.tex}
+% ==========================================================
+% 7. Data Parallelism (DP)
+% ==========================================================
+\input{chap_dp.tex}
 
 \clearpage
 
 % ==========================================================
-% 6. Data Parallelism (DP)
+% 8. Hybrid Data + Tensor Parallelism (DP + TP)
 % ==========================================================
-\section{Data Parallelism (DP)}
-
-In data parallelism, each replica holds a full copy of the model, but
-processes a different subset of the batch. Gradients are synchronized
-across replicas via All-Reduce.
-
-\subsection{DP Overview and Transformer Flow}
-\input{transformer_overall_flow_DP.tex}
-
-\clearpage
-
-\subsection{MHA Backward under DP}
-\input{mha_backward_DP.tex}
-
-\clearpage
-
-\subsection{MLP Backward under DP}
-\input{mlp_backward_DP.tex}
+\input{chap_dp_tp.tex}
 
 \clearpage
 
 % ==========================================================
-% 7. Hybrid Data + Tensor Parallelism (DP + TP)
+% 9. Summary and Practical Takeaways
 % ==========================================================
-\section{Hybrid Data + Tensor Parallelism (DP + TP)}
 
-We combine tensor parallelism within each node (or group of devices)
-with data parallelism across groups. This section explains how the two
-forms of parallelism interact in both forward and backward passes.
-
-\subsection{DP+TP Overview and Communication Patterns}
-\input{transformer_overall_flow_DP_TP.tex}
-
-\clearpage
-
-% ==========================================================
-% 8. Summary and Practical Takeaways
-% ==========================================================
-\section{Summary and Practical Takeaways}
-
-We summarize the main ideas:
-\begin{itemize}
-  \item How a Transformer layer operates as a composition of
-        embedding, MHA, MLP, and output projection blocks.
-  \item How tensor shapes evolve through forward and backward passes.
-  \item How single-node execution extends to tensor parallelism, data
-        parallelism, and their combination.
-\end{itemize}
-
-We also highlight how these diagrams can be used as a reference when
-designing or debugging large-scale Transformer training and inference
-systems.
+\input{chap_summary.tex}
 
 \end{document}

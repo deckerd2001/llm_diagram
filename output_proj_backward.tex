@@ -14,7 +14,7 @@
 
 % Start from dL
 \node           (dL)    at (18,0) {$\text{d}\mathcal{L}$};
-\node[auxnode]  (dCE)   [below=2.0cm of dL] {dCE};
+\node[auxnode]  (dCE)   [below=1.0cm of dL] {dCE};
 \node           (Y)     [below=0.9cm of dCE] {$\mathbf{Y_\text{targets}}$};
 
 % Softmax backward
@@ -23,20 +23,20 @@
 
 % Logits (Linear Projection) backprop node
 \node[mulnode]  (backMul) [left=4.4cm of dS] {$\bullet$};
-\node[auxnode]  (T_Wlm)   [below=0.9cm of backMul] {T};
-\node           (Wlm)     [align=center, below=0.9cm of T_Wlm] {$\widetilde{\mathbf{W}}_{\text{lm}}$\\$[D,V]$};
+\node[auxnode]  (T_Wlm)   [below=0.5cm of backMul] {T};
+\node           (Wlm)     [align=center, below=0.5cm of T_Wlm] {$\widetilde{\mathbf{W}}_{\text{lm}}$\\$[D,V]$};
 
 \coordinate (B_split) at ($(backMul)!0.5!(dS)$);
 
 % SUM node for Bias gradient
-\node[sumnode]  (SumB) [below=1.5cm of B_split] {$\sum_{B,S}$};
-\node           (db)   [align=center, below=0.8cm of SumB] {$\text{d}\widetilde{\mathbf{b}}_{\text{lm}}$\\$[V]$};
+\node[sumnode]  (SumB) [below=0.5cm of B_split] {$\sum_{B,S}$};
+\node           (db)   [align=center, below=0.5cm of SumB] {$\text{d}\widetilde{\mathbf{b}}_{\text{lm}}$\\$[V]$};
 
 % dW calc
-\node[mulnode]  (dWmul) [above=2.8cm of backMul] {$\bullet$};
+\node[mulnode]  (dWmul) [above=1.0cm of backMul] {$\bullet$};
 \node[auxnode]  (TAout) [left=1.5cm of dWmul] {T};
 \node           (Aout)  [left=1.6cm of TAout] {$\mathbf{A}_{\text{out}}$};
-\node           (dW)    [align=center, above=0.8cm of dWmul] {$\text{d}\widetilde{\mathbf{W}}_{\text{lm}}$\\$[D,V]$};
+\node           (dW)    [align=center, above=0.5cm of dWmul] {$\text{d}\widetilde{\mathbf{W}}_{\text{lm}}$\\$[D,V]$};
 
 % Back to Transformer
 \node           (dH)    [left=2.6cm of backMul] {$\text{d}\mathbf{A}_{\text{out}}$};
@@ -64,7 +64,7 @@
 \draw[fwd]  (TAout) -- (dWmul) node[dimlabel, midway, above]{\shortstack{$[B,D,S]$}};
 \draw[flow2] (dWmul) -| (B_split);
 
-\node[font=\large\bfseries, anchor=south]
-  at ([yshift=6mm]current bounding box.north) {Token Generation \& Loss — Backward (Corrected)};
+% \node[font=\large\bfseries, anchor=south]
+%   at ([yshift=6mm]current bounding box.north) {Token Generation \& Loss — Backward (Corrected)};
 \end{tikzpicture}%
 }

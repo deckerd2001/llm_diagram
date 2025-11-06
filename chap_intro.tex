@@ -1,0 +1,61 @@
+% ==========================================================
+% 1. Introduction
+% ==========================================================
+\section{Introduction}
+
+Transformers and their variants are now the dominant architecture for large-scale language and vision models. Modern systems combine them with multiple forms of parallelism (tensor, data, pipeline, and others) to train and serve models with hundreds of billions of parameters across many accelerators.
+
+The high-level ideas are widely known, but the execution details are scattered across code bases, papers, and blog posts. As a result, even experienced practitioners often find it surprisingly hard to answer very concrete questions, such as:
+\begin{itemize}
+  \item What are the exact tensors and matrix multiplications in a single Transformer layer, in both forward and backward passes?
+  \item How many large matrix multiplications does backpropagation through attention and the MLP actually require?
+  \item Where do All-Reduce and All-Gather operations appear when we introduce tensor or data parallelism?
+\end{itemize}
+
+This document is a visual, dimension-oriented guide to those questions.
+It does not propose a new architecture or a new training method.
+Instead, its goal is to reorganize standard, widely-used techniques---vanilla Transformers, backpropagation, and common parallel training schemes---into a form where their structure, tensor shapes, and costs are easy to see at a glance.
+
+\subsection{Scope and Goals}
+
+The focus is deliberately narrow:
+\begin{itemize}
+  \item We consider a standard Transformer block with multi-head self-attention, a position-wise feed-forward (MLP/FFN) block, residual connections, and layer normalization.
+  \item We work at the level of one layer at a time, plus the input embedding and output projection, rather than full end-to-end training pipelines.
+  \item We emphasize how tensors and gradients flow through a layer and how different parallelism strategies modify that flow, rather than architectural variants or empirical benchmarks.
+\end{itemize}
+
+Within this scope, our aims are:
+\begin{itemize}
+  \item To make the forward and backward computation graphs of a single Transformer layer explicit, including tensor shapes.
+  \item To show how these graphs change (or do not change) under tensor parallelism, data parallelism, and their combination.
+  \item To provide mental models and rules of thumb that help practitioners reason about compute, memory, and communication costs.
+\end{itemize}
+
+Everything in this document is a restatement of standard backpropagation and standard parallel training techniques. The contribution is purely expository: we aim to unify and clarify, not to introduce new algorithms.
+
+\subsection{Intended Audience}
+
+This guide is written for readers who:
+\begin{itemize}
+  \item Are comfortable with basic linear algebra and the idea of gradients and backpropagation.
+  \item Have at least a high-level understanding of Transformers (e.g., Q/K/V, attention weights, MLP block, residual connections).
+  \item Want a concrete, implementation-oriented view of what actually happens inside a layer during forward and backward passes, especially in distributed settings.
+\end{itemize}
+
+The diagrams and notation are designed to be close to how large-model frameworks actually implement these models, without depending on any particular codebase.
+
+\subsection{Structure of the Document}
+
+The rest of the document proceeds from simple scalar gradients to full parallel Transformer layers:
+
+\begin{itemize}
+  \item Section~\ref{sec:background} provides a very light neural-network refresher: tensors, linear layers, MLPs, and the basic idea of backpropagation. This is only meant to fix notation and intuition; readers already familiar with these concepts can skim it.
+  \item Section~\ref{sec:background} also explains why sequence models need self-attention and how a standard Transformer block (embeddings, MHA, MLP, residuals, normalization) is organized at a high level.
+  \item Section~\ref{sec:gradients-basics} introduces gradients and backpropagation from an operator point of view, setting up the abstract forward/backward nodes that our diagrams use.
+  \item Section~\ref{sec:graph-conventions} defines the graphical notation: how we draw tensors, parameters, gradients, shapes, and communication collectives.
+  \item Subsequent sections build up a single-node Transformer layer, with detailed forward and backward computation graphs for the embedding, MHA, MLP, and output projection.
+  \item Later sections introduce tensor parallelism and data parallelism, and then combine these ideas into a DP+TP setting, where each data-parallel replica is itself a tensor-parallel group.
+\end{itemize}
+
+Readers interested mainly in high-level parallelism can skim the background section and focus on the diagrams in the parallelism sections. Those who want a detailed understanding of backpropagation inside a Transformer layer may find it useful to walk through the single-node graphs first and then treat the parallel variants as structured modifications of that base case.

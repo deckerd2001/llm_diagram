@@ -11,7 +11,7 @@
     io/.style={text centered, font=\bfseries}
 ]
     % Title
-    \node[font=\Large\bfseries] at (10, 14) {Transformer Flow with TP + DP (2 DP replicas × 3 TP GPUs)};
+    % \node[font=\Large\bfseries] at (10, 14) {Transformer Flow with TP + DP (2 DP replicas × 3 TP GPUs)};
 
     % ========== DP Replica 0 (Upper) ==========
     \node[font=\normalsize\bfseries, anchor=west] at (-1, 11.5) {DP Rank 0};
@@ -143,7 +143,7 @@
     \draw [dpcomm] (mlp_0.south) -- (mlp_1.north) node[midway, right, font=\tiny, align=left, red!70] {(2) DP All-Reduce\\$(\nabla W_{\text{up},\text{down}})$};
 
     % Communication Order Annotation
-    \node[font=\scriptsize, align=left, text width=7.5cm, draw=black!30, fill=yellow!10, rounded corners] at ([xshift=15.5cm, yshift=10em]encoding_1.south) {
+    \node[font=\scriptsize, align=center, text width=7.5cm, draw=black!30, fill=yellow!10, rounded corners] at ([xshift=5cm, yshift=-9em]encoding_1.south) {
         \textbf{Communication in TP+DP:}\\
         \textbf{Forward:} \textcolor{blue!70}{TP all\_reduce(X)} - sync activations\\
         \textbf{Backward:}\\

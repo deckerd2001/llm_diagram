@@ -11,7 +11,7 @@
     dimlabel/.style={font=\tiny, inner sep=1pt, align=center},
     gradlabel/.style={font=\tiny\bfseries, inner sep=1pt, align=center}
 ]
-    \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass};
+    % \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass};
 
     \pgfmathsetmacro{\backwardoffset}{0.0}
 
@@ -27,18 +27,18 @@
     \node (d_Bdown) [above=0.8cm of d_SumB2] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{down}}$};
     \draw[flow_dw] (d_SumB2) -- (d_Bdown) node[dimlabel, midway, right]{$[D]$};
 
-    \draw[flow_rev] (split2) -- (d_Drop2);
+    % \draw[flow_rev] (split2) -- (d_Drop2);
     \draw[flow_rev] (d_SumB2) -- (split2);
 
     \node[mulnode] (d_L2Mul_in) [left=2.2cm of split2] {$\bullet$};
     \draw[flow_rev] (d_L2Mul_in) -- (d_Drop2)
       node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{down}}=\mathrm{d}\mathbf{A}_{\text{out}}$\\$[B,S,D]$}};
 
-    \node (W_down_T) [below=1.8cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{T}$};
+    \node (W_down_T) [below=1.0cm of d_L2Mul_in] {$\tilde{\mathbf{W}}_{\text{down}}^{T}$};
     \draw[flow_act] (W_down_T.north) -- (d_L2Mul_in)
       node[dimlabel, midway, right]{$[D, D_{ff}]$};
 
-    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 3.5cm)$);
+    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 2.5cm)$);
     \node[mulnode] (d_L2Mul_w) at (L2Mul_w_y) {$\bullet$};
     \node (d_Wdown) [above=0.8cm of d_L2Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{down}}$};
     \draw[flow_dw] (d_L2Mul_w) -- (d_Wdown) node[dimlabel, midway, right]{$[D_{ff}, D]$};
@@ -66,18 +66,18 @@
     \node (d_Bup) [above=0.8cm of d_SumB1] {$\mathrm{d}\tilde{\mathbf{b}}_{\text{up}}$};
     \draw[flow_dw] (d_SumB1) -- (d_Bup) node[dimlabel, midway, right]{$[D_{ff}]$};
 
-    \draw[flow_rev] (split1) -- (d_Act);
+    % \draw[flow_rev] (split1) -- (d_Act);
     \draw[flow_rev] (d_SumB1) -- (split1);
 
     \node[mulnode] (d_L1Mul_in) [left=2.2cm of split1] {$\bullet$};
     \draw[flow_rev] (d_L1Mul_in) -- (d_Act)
       node[gradlabel, midway, below]{\shortstack{$\mathrm{d}\mathbf{Z}_{\text{up}}=\mathrm{d}\mathbf{A}_{\text{up}}$\\$[B,S,D_{ff}]$}};
 
-    \node (W_up_T) [below=1.8cm of d_L1Mul_in] {$\tilde{\mathbf{W}}_{\text{up}}^{T}$};
+    \node (W_up_T) [below=1.0cm of d_L1Mul_in] {$\tilde{\mathbf{W}}_{\text{up}}^{T}$};
     \draw[flow_act] (W_up_T.north) -- (d_L1Mul_in)
       node[dimlabel, midway, right]{$[D_{ff}, D]$};
 
-    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 3.5cm)$);
+    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 2.5cm)$);
     \node[mulnode] (d_L1Mul_w) at (L1Mul_w_y) {$\bullet$};
     \node (d_Wup) [above=0.8cm of d_L1Mul_w] {$\mathrm{d}\tilde{\mathbf{W}}_{\text{up}}$};
     \draw[flow_dw] (d_L1Mul_w) -- (d_Wup) node[dimlabel, midway, right]{$[D, D_{ff}]$};

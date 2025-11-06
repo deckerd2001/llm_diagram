@@ -1,0 +1,181 @@
+% ==========================================================
+% 2. Background: Neural Networks and Transformers
+% ==========================================================
+\section{Background: Neural Networks and Transformers}
+\label{sec:background}
+
+This section provides a minimal background on neural networks and Transformer models.
+The goal is not to re-teach deep learning, but to fix notation and high-level structure for the dimension-annotated diagrams in the rest of the document.
+
+We first review how we represent tensors and linear layers, then move from simple MLPs to sequence models with self-attention and standard Transformer blocks.
+All of these are widely-used, standard techniques; we only reorganize them in a way that will make the later graphical representations easy to follow.
+
+\subsection{Basic Notation and Tensors}
+
+We view a neural network as a composition of simple operators applied to tensors.
+A model with $L$ layers can be written as
+\[
+X_0 \xrightarrow{f_1} X_1 \xrightarrow{f_2} \cdots \xrightarrow{f_L} X_L,
+\]
+where
+\begin{itemize}
+  \item $X_0$ is the input tensor,
+  \item $X_L$ is the final output,
+  \item each $f_\ell$ is a local operation (e.g., a matrix multiplication, a non-linearity, a normalization layer) with its own parameters $\theta_\ell$.
+\end{itemize}
+
+We use the following conventions throughout:
+\begin{itemize}
+  \item Bold uppercase letters like $\mathbf{X}$ for tensors.
+  \item Plain uppercase letters like $W$ for weight matrices.
+  \item Plain lowercase letters like $b$ for bias vectors.
+  \item Gradients are prefixed by $d$, e.g., $d\mathbf{X}$, $dW$.
+\end{itemize}
+
+Unless otherwise stated, the main hidden representations in this document are 3-D tensors of shape
+\[
+\mathbf{X} \in \mathbb{R}^{B \times S \times D},
+\]
+where $B$ is the batch size, $S$ is the sequence length (number of tokens), and $D$ is the hidden (model) dimension.
+
+For weights and other parameters we mostly use:
+\begin{itemize}
+  \item 2-D matrices, e.g., $W \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}}$,
+  \item 1-D vectors, e.g., $b \in \mathbb{R}^{D_{\text{out}}}$.
+\end{itemize}
+Later figures explicitly label these shapes on edges (e.g., $[B, S, D]$, $[D, D_{\text{ff}}]$), so it is useful to keep this convention in mind.
+
+\subsection{Linear Layers and MLP Blocks}
+
+The main computational workhorse in a Transformer block is the fully-connected (linear) layer and its composition into an MLP (or FFN) block.
+
+Given an input tensor $\mathbf{X} \in \mathbb{R}^{B \times S \times D_{\text{in}}}$, a linear layer with weight $W \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}}$ and bias $b \in \mathbb{R}^{D_{\text{out}}}$ applies the same affine transformation independently to all $(b, s)$ positions:
+\[
+\mathbf{Y}[b, s, :] = \mathbf{X}[b, s, :] W + b.
+\]
+We can write this compactly as
+\[
+\mathbf{Y} = \mathrm{Linear}(\mathbf{X}; W, b).
+\]
+
+A typical Transformer MLP block uses two such linear layers with an intermediate non-linearity:
+\[
+\mathbf{X}
+\;\xrightarrow{\text{linear up}}\;
+\mathbf{Z}_{\text{up}}
+\;\xrightarrow{\phi}\;
+\mathbf{Z}_{\text{act}}
+\;\xrightarrow{\text{linear down}}\;
+\mathbf{Y},
+\]
+where
+\begin{itemize}
+  \item $\mathbf{X}, \mathbf{Y} \in \mathbb{R}^{B \times S \times D}$,
+  \item $\mathbf{Z}_{\text{up}}, \mathbf{Z}_{\text{act}} \in \mathbb{R}^{B \times S \times D_{\text{ff}}}$,
+  \item $D_{\text{ff}}$ is an intermediate feed-forward dimension, usually larger than $D$,
+  \item $\phi$ is an elementwise non-linearity (e.g., GELU, ReLU, or similar).
+\end{itemize}
+
+Later sections draw each of these linear and non-linear steps as separate nodes with explicit tensor shapes, so that both forward and backward flows are easy to trace.
+
+\subsection{Sequence Modeling and Self-Attention}
+
+The previous subsection treats inputs as independent vectors.
+However, many applications involve ordered sequences:
+\begin{itemize}
+  \item Text: a sentence or paragraph as a sequence of tokens.
+  \item Time series: a sequence of measurements over time.
+  \item Audio or video: a sequence of frames.
+\end{itemize}
+
+We represent a batch of sequences as $\mathbf{X} \in \mathbb{R}^{B \times S \times D}$, where $S$ is the sequence length.
+The model must capture dependencies across positions in the same sequence, not just transform each token independently.
+
+Recurrent architectures (RNNs, LSTMs, GRUs) handle this by updating hidden states step by step.
+Transformer models instead use self-attention, which allows each position to directly attend to other positions in the same sequence.
+
+Given hidden states $\mathbf{X} \in \mathbb{R}^{B \times S \times D}$, self-attention first projects them into queries (Q), keys (K), and values (V):
+\[
+\mathbf{Q} = \mathbf{X} W_Q, \quad
+\mathbf{K} = \mathbf{X} W_K, \quad
+\mathbf{V} = \mathbf{X} W_V,
+\]
+where $W_Q, W_K, W_V \in \mathbb{R}^{D \times D}$ or, more generally, from $D$ to some head dimension.
+The attention scores between positions are then computed as scaled dot products between queries and keys, followed by a softmax, and used to form weighted sums of the values.
+
+In multi-head attention (MHA), we use $N_H$ heads in parallel, each with head dimension $D_h$, such that
+\[
+D = N_H \cdot D_h.
+\]
+Conceptually, the shapes involved are:
+\begin{itemize}
+  \item Input / output hidden states: $\mathbf{X}, \mathbf{Y} \in \mathbb{R}^{B \times S \times D}$,
+  \item Per-head projections: $\mathbf{Q}, \mathbf{K}, \mathbf{V} \in \mathbb{R}^{B \times N_H \times S \times D_h}$,
+  \item Attention scores: $\mathbf{A} \in \mathbb{R}^{B \times N_H \times S \times S}$.
+\end{itemize}
+Our diagrams in later sections make these shapes explicit and show exactly where the large matrix multiplications occur in both forward and backward passes.
+
+\subsection{Standard Transformer Block Structure}
+
+A standard Transformer block combines self-attention, an MLP block, normalization, and residual connections into a fixed pattern.
+There are several equivalent variants in the literature (e.g., pre-norm vs.\ post-norm).
+For the purposes of this document, we assume a typical pre-norm formulation:
+
+\begin{enumerate}
+  \item \textbf{Input and layer normalization.}
+        The block receives an input $\mathbf{X}_{\text{in}} \in \mathbb{R}^{B \times S \times D}$ and applies layer normalization:
+        \[
+          \mathbf{X}_1 = \mathrm{LayerNorm}(\mathbf{X}_{\text{in}}).
+        \]
+  \item \textbf{Multi-head self-attention (MHA).}
+        Self-attention produces an output $\mathbf{H}_{\text{att}} \in \mathbb{R}^{B \times S \times D}$, often including dropout:
+        \[
+          \mathbf{H}_{\text{att}} = \mathrm{MHA}(\mathbf{X}_1).
+        \]
+  \item \textbf{First residual connection.}
+        \[
+          \mathbf{X}_2 = \mathbf{X}_{\text{in}} + \mathbf{H}_{\text{att}}.
+        \]
+  \item \textbf{Second layer normalization.}
+        \[
+          \mathbf{X}_3 = \mathrm{LayerNorm}(\mathbf{X}_2).
+        \]
+  \item \textbf{MLP (feed-forward) block.}
+        \[
+          \mathbf{H}_{\text{mlp}} = \mathrm{MLP}(\mathbf{X}_3),
+        \]
+        where the MLP has the structure described in the previous subsection.
+  \item \textbf{Second residual connection.}
+        \[
+          \mathbf{X}_{\text{out}} = \mathbf{X}_2 + \mathbf{H}_{\text{mlp}}.
+        \]
+\end{enumerate}
+
+Additional components such as dropout, bias terms, and positional encodings can be inserted, but from the perspective of our dimension-annotated computation graphs, the key ingredients are:
+\begin{itemize}
+  \item Repeated use of tensors of shape $[B, S, D]$,
+  \item Multi-head attention tensors with shapes involving $[N_H, D_h]$ and $[S, S]$,
+  \item Linear layers with weights of shapes like $[D, D_{\text{ff}}]$, $[D_{\text{ff}}, D]$, $[D, D]$,
+  \item Residual additions and layer normalization applied along the hidden dimension.
+\end{itemize}
+
+We also assume:
+\begin{itemize}
+  \item An input embedding (and possibly positional embedding) that maps token IDs or features into $[B, S, D]$,
+  \item A final output projection that maps hidden states back to vocabulary logits or task-specific outputs.
+\end{itemize}
+These embeddings and projections are treated as additional linear layers in our diagrams.
+
+\subsection{Connection to the Rest of the Document}
+
+The purpose of this background is simply to establish what a standard Transformer layer looks like and which tensor shapes and operators appear inside it.
+All of these are standard and widely-used; we do not propose any new model.
+
+Starting from the next section, we shift from this high-level architectural view to a more operator-centric view:
+\begin{itemize}
+  \item We represent each forward operation (e.g., matrix multiplication, softmax, layer norm, residual addition) as a node in a computation graph.
+  \item We introduce matching backward operators that consume upstream gradients and produce gradients with respect to inputs and parameters.
+  \item We then apply this framework to single-node Transformer layers and later extend it to tensor parallelism, data parallelism, and their combination.
+\end{itemize}
+
+The rest of the document can thus be read as a detailed, visual unpacking of the standard Transformer block defined in this section.

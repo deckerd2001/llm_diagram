@@ -14,7 +14,7 @@
     dpgradweight/.style={->, thick, black!85},
     dpcomm/.style={<->, thick, red!70, dashed}
 ]
-    \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass (Data Parallel)};
+    % \node[font=\Large\bfseries] at (5, 10) {MLP Backward Pass (Data Parallel)};
 
     \pgfmathsetmacro{\backwardoffset}{0.0}
 
@@ -40,7 +40,7 @@
     \draw[flow_act] (W_down_T.north) -- (d_L2Mul_in)
       node[dimlabel, midway, right]{$[D, D_{ff}]$};
 
-    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 3.5cm)$);
+    \coordinate (L2Mul_w_y) at ($(d_L2Mul_in) + (0, 2.5cm)$);
     \node[mulnode] (d_L2Mul_w) at (L2Mul_w_y) {$\bullet$};
 
     % Add AR node before d_Wdown
@@ -90,7 +90,7 @@
     \draw[flow_act] (W_up_T.north) -- (d_L1Mul_in)
       node[dimlabel, midway, right]{$[D_{ff}, D]$};
 
-    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 3.5cm)$);
+    \coordinate (L1Mul_w_y) at ($(d_L1Mul_in) + (0, 2.5cm)$);
     \node[mulnode] (d_L1Mul_w) at (L1Mul_w_y) {$\bullet$};
 
     % Add AR node before d_Wup

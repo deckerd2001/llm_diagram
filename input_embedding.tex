@@ -8,7 +8,7 @@
   flow2/.style={->, double, thick, black!85},
   dimlabel/.style={font=\scriptsize, inner sep=1pt, align=center}
 ]
-\node[font=\Large\bfseries] at (9, 3.8) {Input $\rightarrow$ Embedding $\rightarrow$ LN (Input to MHA)};
+% \node[font=\Large\bfseries] at (9, 3.8) {Input $\rightarrow$ Embedding $\rightarrow$ LN (Input to MHA)};
 \node (RawText) at (0,0) {};
 \node[auxnode, align=center] (Tok)   [right=1.6cm of RawText] {Tokenizer\\(IDs)};
 \node[auxnode, align=center] (Lookup)[right=2.0cm of Tok]     {Embedding Lookup};
