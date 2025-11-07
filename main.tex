@@ -1,5 +1,12 @@
 \documentclass{article}
 
+% ===== Language switch =====
+\newif\ifkorean
+% 여기서 언어 선택:
+% \koreantrue   % 한글 버전
+\koreanfalse    % 영어 버전
+% ===========================
+
 % ------------------------ Packages ------------------------
 \usepackage{amsmath, amssymb}
 \usepackage{tikz}
@@ -10,6 +17,9 @@
 \usetikzlibrary{shapes, arrows, positioning, fit, calc}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, decorations.pathreplacing}
 
+% 한글일 때만 kotex 로딩 (설치돼 있으면)
+\usepackage{kotex}
+
 % Page numbering
 \usepackage{fancyhdr}
 \pagestyle{fancy}
@@ -19,12 +29,13 @@
 
 % ------------------------ Document ------------------------
 \begin{document}
+\ifkorean
+  \title{트랜스포머 병렬화: 차원 기반 시각적 가이드\\[0.3em]
+         \large A Visual, Dimension-Oriented Guide to Transformer Parallelism}
+\else
+  \title{A Visual, Dimension-Oriented Guide to\\ Transformer Parallelism}
+\fi
 
-\title{A Visual, Dimension-Oriented Guide to\\ Transformer Parallelism}
-\author{
-  Kyungho Kim, Jeehoon Kim, Wonsuk Lee\\
-  SK hynix US AI Solutions Tech.
-}
 \date{November 6, 2025}
 \maketitle
 
@@ -39,65 +50,90 @@
 % ==========================================================
 % 1. Introduction
 % ==========================================================
-
-\input{chap_intro.tex}
+\ifkorean
+  \input{chap_intro_ko.tex}
+\else
+  \input{chap_intro.tex}
+\fi
 \clearpage
-
 
 % ==========================================================
 % 2. Background: Neural Networks and Transformers
 % ==========================================================
-
-\input{chap_background.tex}
-
+\ifkorean
+  \input{chap_background_ko.tex}
+\else
+  \input{chap_background.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 3. Gradients and Backpropagation Basics
 % ==========================================================
-\input{chap_gradients_basics.tex}
-
+\ifkorean
+  \input{chap_gradients_basics_ko.tex}
+\else
+  \input{chap_gradients_basics.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 4. Graphical Notation and Figure Conventions
 % ==========================================================
-\input{chap_graph_conventions.tex}
-
+\ifkorean
+  \input{chap_graph_conventions_ko.tex}
+\else
+  \input{chap_graph_conventions.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 5. Single-Node Transformer: Forward and Backward
 % ==========================================================
-\input{chap_single_node_transformer.tex}
-
+\ifkorean
+  \input{chap_single_node_transformer_ko.tex}
+\else
+  \input{chap_single_node_transformer.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 6. Tensor Parallelism (TP)
 % ==========================================================
-
-\input{chap_tp.tex}
+\ifkorean
+  \input{chap_tp_ko.tex}
+\else
+  \input{chap_tp.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 7. Data Parallelism (DP)
 % ==========================================================
-\input{chap_dp.tex}
-
+\ifkorean
+  \input{chap_dp_ko.tex}
+\else
+  \input{chap_dp.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 8. Hybrid Data + Tensor Parallelism (DP + TP)
 % ==========================================================
-\input{chap_dp_tp.tex}
-
+\ifkorean
+  \input{chap_dp_tp_ko.tex}
+\else
+  \input{chap_dp_tp.tex}
+\fi
 \clearpage
 
 % ==========================================================
 % 9. Summary and Practical Takeaways
 % ==========================================================
-
-\input{chap_summary.tex}
+\ifkorean
+  \input{chap_summary_ko.tex}
+\else
+  \input{chap_summary.tex}
+\fi
 
 \end{document}

@@ -1,0 +1,313 @@
+% ==========================================================
+% 7. 데이터 병렬화
+% ==========================================================
+\section{데이터 병렬화}
+\label{sec:dp}
+
+데이터 병렬화(data parallelism, DP)에서는 각 복제본(replica)이
+모델 전체를 그대로 한 벌씩 가지고 있지만, 서로 다른 배치 조각을
+처리한다. 개념적으로는 각 디바이스가 단일 노드 설정
+(Section~\ref{sec:sn})과 \emph{동일한} 순전파·역전파 계산을 수행하되,
+입력 미니배치만 서로 다른 셈이다. 역전파가 끝난 뒤에는
+All-Reduce를 통해 기울기를 복제본들 사이에서 동기화하여,
+전역 배치를 한 번에 처리하는 단일 노드 학습과
+\emph{동일한} 옵티마이저 업데이트가 이루어지도록 한다.
+
+단일 복제본의 관점에서 보면, 각 트랜스포머 블록 안의 순전파 계산 그래프는
+단일 노드의 그래프(Section~\ref{sec:sn})와 완전히 같고,
+텐서 병렬화(Section~\ref{sec:tp})까지 함께 사용하는 경우에도
+각 복제본은 동일한 TP가 적용된 그래프를 자신의 미니배치에 대해 실행한다.
+달라지는 것은 입력 배치뿐이다.
+글로벌 배치
+\[
+  \mathbf{X} \in \mathbb{R}^{B \times S \times D}
+\]
+대신, 복제본 $d$는
+\[
+  \mathbf{X}_d \in \mathbb{R}^{B_{\text{local}} \times S \times D}
+\]
+라는 로컬 배치를 보게 되며, $B_{\text{local}} = B / N_D$이다.
+
+데이터 병렬 복제본의 개수를 $N_D$라 두고,
+디바이스 인덱스는 $d \in \{0,\dots,N_D-1\}$로 표기한다.
+
+\textbf{핵심 아이디어는 다음과 같다.}
+\begin{itemize}
+  \item 각 디바이스는 모델 파라미터(가중치와 옵티마이저 상태)를
+        \emph{온전히} 한 벌씩 가진다.
+  \item 전역 배치 크기 $B$는 $N_D$개의 로컬 배치로 나뉘며,
+        각 로컬 배치의 크기는 $B_{\text{local}} = B / N_D$이다.
+  \item 각 디바이스의 순전파는 Section~\ref{sec:sn}의 단일 노드 계산과 동일하지만,
+        자신의 로컬 배치만 사용한다.
+  \item 역전파는 각 디바이스에서 로컬 기울기
+        $\nabla W^{(d)}$를 계산한다.
+  \item 모든 데이터 병렬 복제본에 걸쳐 All-Reduce를 수행해
+        기울기를 평균(또는 합산)함으로써,
+        배치 크기 $B$인 단일 노드 실행과 동등한 업데이트를 만든다.
+\end{itemize}
+
+텐서 병렬화(Section~\ref{sec:tp})와 달리,
+데이터 병렬화는 가중치 행렬이나 활성값을 쪼개지 않는다.
+대신 모델 전체는 복제하고, \emph{데이터만} 분할한다.
+
+% ------------------------ 7.1 Overall DP Flow -------------------------
+\subsection{데이터 병렬 학습 전체 흐름}
+
+Figure~\ref{fig:dp_overall_flow}는 트랜스포머 레이어에
+데이터 병렬화를 적용했을 때의 상위 수준 구조를 보여준다.
+단일 노드 개요 그림(Figure~\ref{fig:single_node_overall})과 비교해 보면,
+이제 $N_D$개의 서로 동일한 블록 복제본이 있고,
+각 복제본이 서로 다른 입력 조각 $\mathbf{X}_d$를 처리하여
+로컬 예측과 로컬 손실을 만든다는 점만 다르다.
+
+하나의 학습 스텝에서 수행되는 순서는 다음과 같다.
+
+\begin{enumerate}
+  \item \textbf{배치 분할 (batch sharding).}
+        전역 배치 크기 $B$를 $N_D$개의 로컬 배치로 나눈다.
+        각 로컬 배치의 크기는 $B_{\text{local}}$이다:
+        \[
+          \{\mathbf{X}_0,\dots,\mathbf{X}_{N_D-1}\},
+          \qquad
+          \mathbf{X}_d \in \mathbb{R}^{B_{\text{local}} \times S \times D_{\text{in}}}.
+        \]
+        각 디바이스 $d$는 이에 대응하는 타깃 토큰
+        $\mathbf{Y}_d$도 함께 받는다.
+  \item \textbf{로컬 순전파.}
+        각 디바이스는 자신의 로컬 입력 $\mathbf{X}_d$에 대해
+        전체 트랜스포머 스택(입력 임베딩, MHA, MLP, 출력 프로젝션)을
+        Section~\ref{sec:sn}에서와 동일하게 적용한다.
+        텐서 병렬화(Section~\ref{sec:tp})도 함께 사용하는 경우,
+        각 복제본은 $\mathbf{X}_d$에 대해 동일한 TP-적용 그래프를 실행한다.
+        어떤 경우든 순전파 구조 자체는 변하지 않고,
+        달라지는 것은 배치 차원과 기울기 동기화의 존재 여부뿐이다.
+        각 디바이스는 로컬 로그릿, 확률, 손실 $\mathcal{L}_d$를 만든다.
+  \item \textbf{로컬 역전파.}
+        각 디바이스에서 손실 $\mathcal{L}_d$에 대한 역전파를 수행하여,
+        디바이스 $d$에 있는 모든 파라미터에 대한 로컬 기울기
+        $\nabla W^{(d)}$를 얻는다.
+  \item \textbf{기울기 동기화 (All-Reduce).}
+        각 파라미터 텐서 $W$에 대해 데이터 병렬 그룹 전체에 대해
+        All-Reduce를 수행한다:
+        \[
+          \nabla W
+            = \frac{1}{N_D}
+              \sum_{d=0}^{N_D-1} \nabla W^{(d)}.
+        \]
+        이 단계 이후에는 모든 복제본이 동일한 평균 기울기
+        $\nabla W$를 갖게 된다.
+  \item \textbf{옵티마이저 업데이트.}
+        각 디바이스는 자신의 로컬 파라미터 복사본에
+        동일한 옵티마이저(SGD, Adam 등)를 적용하여 업데이트한다.
+        기울기가 동기화되어 있기 때문에,
+        모든 복제본의 파라미터는 다시 일치하게 된다.
+\end{enumerate}
+
+Figure~\ref{fig:dp_overall_flow}에서는 이러한 과정을
+단일 트랜스포머 레이어 관점에서 요약한다.
+각 디바이스는 단일 노드 그래프의 \emph{완전한} 복사본을 가지고 있으며,
+기울기 All-Reduce 단계만 추가된다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow_DP.tex}
+  \caption{데이터 병렬화가 적용된 트랜스포머 레이어 전체 구조.
+  각 디바이스는 모델 전체를 한 벌씩 가지고 있고,
+  서로 다른 입력 배치 조각($\mathbf{X}_i$, $\mathbf{X}_j$, \dots)을 처리한다.
+  순전파와 역전파는 단일 노드와 동일하게 로컬에서 수행되며,
+  각 블록(MHA, MLP, 출력 프로젝션)의 기울기는 All-Reduce를 통해
+  복제본 간에 동기화된다.}
+  \label{fig:dp_overall_flow}
+\end{figure}
+
+% ------------------------ 7.2 Relation to Single-Node -----------------
+\subsection{단일 노드 계산과의 관계}
+
+데이터 병렬화는 Section~\ref{sec:sn}의 단일 노드 계산 위에
+\emph{래퍼(wrapper)}를 씌운 것으로 보는 것이 이해에 도움이 된다.
+
+\begin{itemize}
+  \item \textbf{복제본별 동일한 계산 그래프.}
+        어떤 레이어(MHA, MLP, 출력 프로젝션)를 보더라도,
+        한 디바이스에서의 순전파·역전파 그래프는
+        단일 노드 그림들
+        (Figures~\ref{fig:single_node_mha_forward},
+         \ref{fig:single_node_mha_backward},
+         \ref{fig:single_node_mlp_forward},
+         \ref{fig:single_node_mlp_backward} 등)과 동일하다.
+        텐서 병렬화가 활성화된 경우에도,
+        Section~\ref{sec:tp}에서 설명한 TP 버전 그래프를 그대로 사용하되,
+        입력 배치만 $\mathbf{X}_d$로 바뀐다.
+  \item \textbf{다른 미니배치.}
+        순전파 관점에서의 유일한 차이는 각 복제본이
+        전역 배치의 서로 다른 조각을 본다는 점이다.
+        데이터 병렬화에서는 순전파 활성값에 대해
+        디바이스 간 통신이 필요 없다.
+  \item \textbf{기울기 집계만 추가.}
+        역전파가 끝난 뒤에만,
+        파라미터 기울기를 All-Reduce를 통해 합산/평균한다.
+        그 외의 계산 그래프 구조는 단일 노드와 동일하다.
+  \item \textbf{큰 배치와의 동등성.}
+        기울기를 복제본들 사이에서 평균하면,
+        결과 업데이트는 배치 크기
+        $B = N_D \cdot B_{\text{local}}$인 단일 노드 실행과
+        수학적으로 동등해진다
+        (드롭아웃 노이즈 등 미세한 차이는 무시).
+\end{itemize}
+
+반대로, 텐서 병렬화(Section~\ref{sec:tp})는
+각 레이어 내부의 그래프 자체를 수정한다.
+가중치 행렬을 샤딩하고, 순전파·역전파 중간에 집합 통신을 삽입한다.
+데이터 병렬화는 레이어 내부의 그래프를 그대로 두고,
+\emph{기울기 수준에서만} 통신을 추가하는 방식이라고 볼 수 있다.
+
+% ------------------------ 7.3 MHA Backward under DP -------------------
+\subsection{데이터 병렬 환경에서의 MHA 역전파}
+
+MHA 블록에 대한 데이터 병렬 역전파를 보다 구체적으로 살펴보자.
+Section~\ref{sec:sn}의 단일 노드 MHA 역전파에서는,
+기울기가 출력 프로젝션, 어텐션 연산, Q/K/V 프로젝션,
+레이어 정규화를 거꾸로 따라가며
+$\nabla W_Q, \nabla W_K, \nabla W_V, \nabla W_O$ 등을 계산한다.
+
+데이터 병렬 환경에서도 \emph{각 복제본 내부}의 계산 그래프는
+그림 구조와 텐서 모양까지 단일 노드 MHA 역전파
+(Figure~\ref{fig:single_node_mha_backward})와 동일하다.
+차이는 다음과 같다.
+
+\begin{itemize}
+  \item 각 디바이스 $d$는 자신의 미니배치 $\mathbf{X}_d$에 대해
+        로컬 기울기
+        $\nabla W_Q^{(d)}, \nabla W_K^{(d)}, \nabla W_V^{(d)}, \nabla W_O^{(d)}$
+        를 계산한다.
+  \item 그런 다음, 모든 데이터 병렬 복제본에 대해
+        All-Reduce를 수행하여 전역 기울기를 얻는다:
+        \[
+          \nabla W_Q
+            = \frac{1}{N_D}
+              \sum_{d=0}^{N_D-1} \nabla W_Q^{(d)}, \quad
+          \nabla W_K
+            = \frac{1}{N_D}
+              \sum_{d=0}^{N_D-1} \nabla W_K^{(d)},
+        \]
+        \[
+          \nabla W_V
+            = \frac{1}{N_D}
+              \sum_{d=0}^{N_D-1} \nabla W_V^{(d)}, \quad
+          \nabla W_O
+            = \frac{1}{N_D}
+              \sum_{d=0}^{N_D-1} \nabla W_O^{(d)}.
+        \]
+\end{itemize}
+
+이 동기화 이후에는 각 디바이스가
+동일한 평균 기울기
+$\nabla W_Q, \nabla W_K, \nabla W_V, \nabla W_O$를 가지게 된다.
+
+Figure~\ref{fig:mha_backward_dp}는 이 과정을 그림으로 나타낸다.
+MHA 블록 내부의 노드와 텐서 모양은
+Figure~\ref{fig:single_node_mha_backward}과 동일하지만,
+추가된 박스와 붉은 점선 화살표가
+데이터 병렬 복제본 사이에서 기울기를 All-Reduce하는 위치를 표시한다.
+
+\begin{landscape}
+\begin{figure}[p]
+  % no \centering here to avoid compilation issues
+  \input{mha_backward_DP.tex}
+  \caption{데이터 병렬 환경에서의 멀티헤드 어텐션 역전파.
+  각 복제본은 자신의 미니배치를 사용해
+  $W_Q$, $W_K$, $W_V$, $W_O$에 대한 로컬 기울기를 계산한다.
+  붉은 점선 화살표는 모든 데이터 병렬 복제본에 걸쳐
+  이러한 로컬 기울기를 All-Reduce하여,
+  옵티마이저에서 사용하는 전역 기울기를 형성하는 위치를 나타낸다.
+  블록 내부의 역전파 그래프 구조는 단일 노드 경우와 동일하다.}
+  \label{fig:mha_backward_dp}
+\end{figure}
+\end{landscape}
+
+% ------------------------ 7.4 MLP Backward under DP -------------------
+\subsection{데이터 병렬 환경에서의 MLP 역전파}
+
+MLP 블록에 대한 상황도 거의 동일하다.
+각 복제본은 단일 노드 MLP 역전파
+(Figure~\ref{fig:single_node_mlp_backward})에서와 똑같이,
+기울기를
+$\mathrm{d}\mathbf{Y}$에서 시작해
+down-projection, 활성 함수, up-projection,
+(필요하다면) 레이어 정규화를 거쳐 다시 $\mathbf{H}$까지 전파하면서,
+다음 파라미터들에 대한 기울기를 누적한다:
+\[
+  W_{\text{up}}, W_{\text{down}},
+  \mathbf{b}_{\text{up}}, \mathbf{b}_{\text{down}}.
+\]
+
+데이터 병렬 환경에서는 각 복제본 $d$가
+\[
+  \nabla W_{\text{up}}^{(d)}, \quad
+  \nabla W_{\text{down}}^{(d)}
+\]
+과 같은 로컬 기울기를 얻고,
+bias에 대해서도 마찬가지이다.
+이 기울기들은 복제본 전체에 대해 All-Reduce를 통해 동기화된다:
+\[
+  \nabla W_{\text{up}}
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_{\text{up}}^{(d)},\quad
+  \nabla W_{\text{down}}
+    = \frac{1}{N_D} \sum_{d=0}^{N_D-1} \nabla W_{\text{down}}^{(d)}.
+\]
+bias 기울기도 이와 동일한 방식으로 처리된다.
+
+입력 $\mathbf{H}$는 모든 디바이스에 복제되어 있으므로,
+$\mathrm{d}\mathbf{H}$ 자체를 위한 추가 통신은 필요 없다.
+각 복제본은 동일한 역전파 함수를 서로 다른 데이터에 대해 적용할 뿐이며,
+파라미터 기울기 측면에서의 “집계 효과”는
+이들 기울기를 평균 내는 All-Reduce 단계에 모두 포함된다.
+
+Figure~\ref{fig:mlp_backward_dp}는
+MLP 역전파 그래프에서 이러한 All-Reduce 위치를 표시한다.
+
+\begin{figure}[p]
+  % no \centering here to avoid compilation issues
+  \input{mlp_backward_DP.tex}
+  \caption{데이터 병렬 환경에서의 MLP 역전파.
+  각 복제본은 자신의 미니배치를 사용해
+  up-/down-projection 가중치와 bias에 대한 로컬 기울기를 계산한다.
+  붉은 박스와 점선 화살표는 데이터 병렬 복제본 전체에 걸쳐
+  이러한 기울기를 All-Reduce하여 전역 기울기를 형성하는 위치를 나타낸다.}
+  \label{fig:mlp_backward_dp}
+\end{figure}
+
+% ------------------------ 7.5 Communication and Memory ----------------
+\subsection{통신 및 메모리 고려사항}
+
+마지막으로, 데이터 병렬화에서의 통신 비용과 메모리 요구사항을
+단일 노드 모델과 비교해 보자.
+
+\begin{itemize}
+  \item \textbf{디바이스당 메모리.}
+        각 디바이스는 모델 파라미터와 옵티마이저 상태의
+        \emph{전체 복사본}을 저장한다.
+        대신, 각 복제본이 보는 배치 크기가 $B_{\text{local}}$이므로,
+        활성값(activation) 메모리는 대략 $N_D$배 감소한다.
+  \item \textbf{통신 패턴.}
+        데이터 병렬화가 도입하는 통신은
+        파라미터 기울기를 동기화할 때의 All-Reduce뿐이다.
+        순전파 경로나 활성값에 대해서는 통신이 없다.
+  \item \textbf{확장성.}
+        $N_D$를 늘리면 효과적인 배치 크기가 커지고,
+        디바이스당 계산량과 활성 메모리는 줄어든다.
+        반면, All-Reduce의 비용은 복제본 수와
+        전체 파라미터 크기에 비례해 증가한다.
+  \item \textbf{다른 병렬화 기법과의 결합.}
+        실무에서는 데이터 병렬화가 텐서 병렬화(때로는 파이프라인 병렬화)와
+        함께 사용되는 경우가 많다.
+        이러한 설정에서는 각 데이터 병렬 그룹이
+        여러 텐서 병렬 shard로 구성되며,
+        기울기 동기화(All-Reduce)는 데이터 병렬 그룹 간에 수행되고,
+        텐서 병렬 집합 통신은 각 그룹 내부에 국한된다.
+\end{itemize}
+
+Section~\ref{sec:sn}에서의 계산 그래프 관점에서 보면,
+데이터 병렬화는 가장 “침습성이 낮은(least invasive)” 병렬화 방식이다.
+레이어별 순전파·역전파 구조는 그대로 유지하면서,
+그 위에 \emph{기울기 All-Reduce}만을 얹어놓는다고 볼 수 있다.

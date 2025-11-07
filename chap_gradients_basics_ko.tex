@@ -1,0 +1,134 @@
+% ==========================================================
+% 3. 기울기와 역전파의 기초
+% ==========================================================
+\section{기울기와 역전파의 기초}
+\label{sec:gradients-basics}
+
+이 장에서는 손실 함수, 기울기, 역전파의 기본 개념을 간단히 정리한다.
+목표는 새로운 수학 이론을 소개하는 것이 아니라, 이후 장들에서 사용할 \emph{연산자 기반(operator-centric)} 관점과 기호를 분명히 하는 데 있다.
+특히, 각 연산 노드의 순전파와 역전파를 \emph{지역(local)} 연산으로 보고, 상위 손실의 기울기가 어떻게 그래프를 따라 전파되는지 설명한다.
+
+\subsection{스칼라 손실과 기울기 표기}
+
+트랜스포머 모델의 학습은 일반적으로 스칼라 손실 $\mathcal{L}$을 최소화하는 문제로 정식화된다.
+입력–타깃 쌍 $(\mathbf{X}, \mathbf{Y}_{\text{targets}})$에 대해 모델 출력은
+\[
+  \mathbf{Y} = f_\theta(\mathbf{X}),
+\]
+이고, 손실은
+\[
+  \mathcal{L} = \mathcal{L}(\mathbf{Y}, \mathbf{Y}_{\text{targets}})
+\]
+와 같이 스칼라 값이다.
+
+앞에서와 마찬가지로, 우리는 기울기를
+\[
+  \mathrm{d}\theta = \frac{\partial \mathcal{L}}{\partial \theta}
+\]
+와 같은 미분 스타일(differential-style) 표기로 쓰고, $\nabla \theta$를 같은 양을 나타내는 축약 표기로 사용한다.
+예를 들어,
+\[
+  \mathrm{d}\mathbf{X}
+  \;=\;
+  \frac{\partial \mathcal{L}}{\partial \mathbf{X}}
+  \;=\;
+  \nabla_{\mathbf{X}} \mathcal{L}
+  \;=\;
+  \nabla \mathbf{X}
+\]
+로 본다.
+그림에서는 표기 간결성을 위해 주로 $\mathrm{d}\mathbf{X}$, $\mathrm{d}\mathbf{W}$와 같이 $d(\cdot)$ 형태를 사용하고, 필요할 때만 $\partial \mathcal{L}/\partial \mathbf{X}$, $\nabla_{\mathbf{X}} \mathcal{L}$과 같은 표기를 병행한다.
+
+핵심은 \emph{모든 기울기가 스칼라 손실 $\mathcal{L}$에 대한 것}이라는 점이다.
+즉, $\mathrm{d}\mathbf{X}$는 언제나 “$\mathcal{L}$을 $\mathbf{X}$에 대해 편미분한 결과”를 뜻하며, 역전파에서 위쪽에서 아래쪽으로 흘러가는 \emph{backward 신호}로 생각할 수 있다.
+
+\subsection{단일 입력 노드와 역전파 연산자}
+
+계산 그래프에서 하나의 노드를 생각해 보자.
+이 노드는 순전파에서
+\[
+  \mathbf{y} = f(\mathbf{x})
+\]
+와 같이 입력 $\mathbf{x}$를 출력 $\mathbf{y}$로 변환한다고 하자.
+여기서 $\mathbf{x}$와 $\mathbf{y}$는 벡터 또는 텐서일 수 있다.
+
+상위 손실 $\mathcal{L}$이 $\mathbf{y}$에 의존한다고 할 때, 체인 룰(chain rule)에 의해
+\[
+  \mathrm{d}\mathbf{x}
+  = \frac{\partial \mathcal{L}}{\partial \mathbf{x}}
+  = \frac{\partial \mathcal{L}}{\partial \mathbf{y}}
+    \cdot
+    \frac{\partial \mathbf{y}}{\partial \mathbf{x}}
+  = \mathrm{d}\mathbf{y} \cdot \frac{\partial f}{\partial \mathbf{x}}
+\]
+이 된다.
+여기서 $\mathrm{d}\mathbf{y} = \partial \mathcal{L} / \partial \mathbf{y}$는 \emph{위쪽에서 내려오는(upstream)} 기울기이고, $\partial f / \partial \mathbf{x}$는 $f$의 야코비안(Jacobian)이다.
+
+실제 구현에서는 전체 야코비안 행렬을 구성하지 않고, 항상
+\[
+  \mathrm{d}\mathbf{x}
+  = \bigl(\tfrac{\partial f}{\partial \mathbf{x}}\bigr)^{\mathsf{T}}
+    \mathrm{d}\mathbf{y}
+\]
+와 같은 야코비안 전치(Jacobian transpose)–벡터 곱 형태를 \emph{직접} 계산한다.
+이 문서에서 말하는 \emph{역전파 연산자(backward operator)}는 바로 이 국소(local) 연산을 의미한다.
+
+추상적으로는 다음과 같은 연산자로 볼 수 있다.
+\[
+  \mathrm{d}\mathbf{x}
+  = \mathrm{d}f(\mathbf{x}, \mathrm{d}\mathbf{y}),
+\]
+즉, 순전파에서의 입력 $\mathbf{x}$와, 역전파에서 위쪽에서 내려온 기울기 $\mathrm{d}\mathbf{y}$를 받아, 입력에 대한 기울기 $\mathrm{d}\mathbf{x}$를 계산하는 연산자이다.
+이때 \emph{순전파에서의 입력 $\mathbf{x}$를 캐시해 두었다가} 역전파에서 함께 사용하는 것이 핵심이다.
+
+\subsection{다중 입력 노드와 역전파 연산자}
+
+좀 더 일반적으로, 하나의 노드가 여러 입력을 받는 경우를 생각해 보자.
+\[
+  \mathbf{y} = f(\mathbf{x}_1, \mathbf{x}_2, \ldots, \mathbf{x}_k)
+\]
+와 같은 연산을 수행하는 노드가 있다고 하자.
+예를 들어, 행렬 곱은 두 입력(왼쪽 행렬, 오른쪽 행렬)을, 레이어 정규화는 입력 텐서와 정규화 파라미터를, 어텐션 연산은 여러 텐서(Q/K/V 등)를 입력으로 가진다.
+
+이때 체인 룰에 의해 각 입력에 대한 기울기는
+\[
+  \mathrm{d}\mathbf{x}_i
+  = \frac{\partial \mathcal{L}}{\partial \mathbf{x}_i}
+  = \frac{\partial \mathcal{L}}{\partial \mathbf{y}}
+    \cdot
+    \frac{\partial \mathbf{y}}{\partial \mathbf{x}_i}
+  = \mathrm{d}\mathbf{y} \cdot \frac{\partial f}{\partial \mathbf{x}_i}
+  \quad (i = 1, \ldots, k)
+\]
+로 주어진다.
+역전파 연산자 관점에서 보면, 이는 다음과 같은 형태의 국소 연산이다.
+\[
+  (\mathrm{d}\mathbf{x}_1, \ldots, \mathrm{d}\mathbf{x}_k)
+  = \mathrm{d}f(\mathbf{x}_1, \ldots, \mathbf{x}_k, \mathrm{d}\mathbf{y}).
+\]
+
+실제 구현에서는 각 연산자에 대해 “입력과 출력, 그리고 위쪽 기울기 $\mathrm{d}\mathbf{y}$를 받아, 입력 기울기들을 계산하는 코드”가 존재한다.
+이 문서에서 나오는 \texttt{dMatmul}, \texttt{dSM}, \texttt{dLN} 같은 노드들은 모두 이러한 \emph{국소 역전파 연산자}를 나타낸다.
+
+\subsection{다이어그램과의 연결}
+
+이 장에서 논의한 내용은 이후 장들에서 제시할 도식과 직접적으로 연결된다.
+요약하면 다음과 같다.
+\begin{itemize}
+  \item 각 \textbf{순전파 노드}는
+    \[
+      \mathbf{y} = f(\mathbf{x}_1, \ldots, \mathbf{x}_k)
+    \]
+    형태의 연산(예: softmax, 합, 행렬 곱, 레이어 정규화 등)을 나타낸다.
+  \item 각 \textbf{역전파 노드}는 여기에 대응하는
+    \[
+      (\mathrm{d}\mathbf{x}_1, \ldots, \mathrm{d}\mathbf{x}_k)
+      = \mathrm{d}f(\mathbf{x}_1, \ldots, \mathbf{x}_k, \mathrm{d}\mathbf{y})
+    \]
+    형태의 연산을 나타낸다.
+    즉, 순전파 입력들과 위쪽 기울기 $\mathrm{d}\mathbf{y}$를 받아, 각 입력에 대한 기울기들을 계산하는 연산자이다.
+  \item 엣지에는 $\mathbf{X}$, $\mathbf{Y}$와 같은 텐서 기호가 붙고, 필요할 때는 $[B, S, D]$, $[B, N_H, S, D_h]$와 같은 텐서 차원을 함께 표기한다.
+\end{itemize}
+
+다음 장에서는 이러한 추상적인 순전파/역전파 노드를 실제 그림에서 어떻게 그릴지, 즉 그래프 표기법과 도식 관례를 정의한다.
+이후의 MHA, MLP, 출력 프로젝션에 대한 자세한 그림은 모두 이 장에서 정리한 \emph{국소 연산자 + 체인 룰} 관점으로 읽을 수 있다.

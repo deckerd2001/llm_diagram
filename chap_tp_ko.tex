@@ -1,0 +1,469 @@
+% ==========================================================
+% 6. 텐서 병렬화 (TP)
+% ==========================================================
+\section{텐서 병렬화}
+\label{sec:tp}
+
+텐서 병렬화에서는 각 레이어의 파라미터를 하나 이상의 텐서 차원을 따라
+여러 디바이스에 나누어 저장한다. 모든 디바이스에 동일한 가중치 행렬 전체를
+복제하는 대신, 각 디바이스는 가중치의 일부(shard)만을 보유하고,
+그에 대응되는 활성값의 일부에 대해서만 연산을 수행한다.
+이후 집합 통신(예: All-Reduce, All-Gather)을 사용하여
+이 부분 결과들을 모아, Section~\ref{sec:sn}에서 정의한
+단일 노드 모델과 동일한 모양의 텐서를 복원한다.
+
+텐서 병렬도의 크기를 $N_T$로 두고,
+디바이스 인덱스는 $t \in \{0,\dots,N_T-1\}$로 표기한다.
+이 장에서는 Section~\ref{sec:sn}에서의 단일 노드 계산을
+이들 $N_T$개 디바이스로 어떻게 나누어 담는지에 초점을 맞춘다.
+
+\textbf{핵심 아이디어는 다음과 같다.}
+\begin{itemize}
+  \item 큰 가중치 행렬은 행 또는 열 방향으로 나누어,
+        각 디바이스가 전체 행렬 $W$ 대신 부분 행렬 $W^{(t)}$만 가지도록 한다.
+  \item 각 디바이스는 자신이 가진 부분 가중치와 부분 활성값만을 사용해
+        \emph{지역(local) 부분 결과}를 계산한다.
+  \item 집합 통신(All-Reduce, All-Gather 등)을 통해
+        각 디바이스의 부분 결과를 모아,
+        단일 노드 계산 그래프에서 나타나는 것과 동일한 텐서를 재구성한다.
+  \item 역전파는 순전파에서의 분할 및 통신 패턴을 그대로 따라가며,
+        파라미터와 입력에 대한 기울기가 올바르게 합산되도록 한다.
+  \item 디바이스당 메모리 사용량은 대략 $N_T$배 감소하지만,
+        각 “글로벌” 행렬 곱은 적어도 한 번의 집합 통신을 필요로 한다.
+\end{itemize}
+
+\subsection{텐서 병렬 분할 개요}
+
+큰 그림에서 보면, 텐서 병렬화는 Section~\ref{sec:sn}에서 등장하는
+모든 큰 행렬 곱을, 여러 디바이스에서 병렬로 수행되는
+작은 행렬 곱들의 집합으로 바꾸는 것으로 볼 수 있다.
+선형 레이어
+\[
+  \mathbf{Y} = \mathbf{X} W + \mathbf{b}, \qquad
+  \mathbf{X} \in \mathbb{R}^{B \times D_{\text{in}}},\;
+  W \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}}
+\]
+를 분할하는 기본 패턴은 두 가지이다.
+
+\begin{itemize}
+  \item \textbf{컬럼 병렬(출력 축 분할) 선형}:
+        출력 차원을 기준으로 $W$를 쪼개어
+        $W = [W^{(0)},\dots,W^{(N_T-1)}]$,
+        $W^{(t)} \in \mathbb{R}^{D_{\text{in}} \times D_{\text{out}}^{(t)}}$
+        로 둔다.
+        각 디바이스는
+        \[
+          \mathbf{Y}^{(t)} = \mathbf{X} W^{(t)} + \mathbf{b}^{(t)}
+        \]
+        를 계산하고, 전체 출력은 단순히 이어 붙여 얻는다:
+        \[
+          \mathbf{Y} = \mathrm{Concat}_t \mathbf{Y}^{(t)}.
+        \]
+        순전파 경로에서는 별도의 집합 통신이 필요 없지만,
+        이후 레이어에서 이 분할된 축을 다시 모으거나(All-Gather),
+        합산(All-Reduce)해야 할 수도 있다.
+  \item \textbf{로우 병렬(입력 축 분할) 선형}:
+        입력 차원을 기준으로 $W$를 나누고,
+        활성값 $\mathbf{X}$도 같은 방식으로 분할한다.
+        각 디바이스는 $\mathbf{X}^{(t)}$와 $W^{(t)}$를 가지고 있으며,
+        \[
+          W^{(t)} \in \mathbb{R}^{D_{\text{in}}^{(t)} \times D_{\text{out}}},
+          \qquad
+          \mathbf{Y}^{(t)} = \mathbf{X}^{(t)} W^{(t)}
+        \]
+        를 계산한다.
+        이후 $t$에 대한 All-Reduce를 통해 전체 출력을 얻는다:
+        \[
+          \mathbf{Y} = \sum_{t=0}^{N_T-1} \mathbf{Y}^{(t)}.
+        \]
+\end{itemize}
+
+트랜스포머 내부에서는 이 두 패턴을 적절히 조합하여,
+대부분의 연산이 각 디바이스 로컬로 유지되도록 하고,
+레이어당 필요한 All-Reduce/All-Gather 호출 수를 최소화한다.
+이러한 스킴을 단일 트랜스포머 블록에 적용한 개략적인 구조는
+Figure~\ref{fig:tp_overall_flow}에 나와 있으며,
+단일 노드 개요 그림(Figure~\ref{fig:single_node_overall})와 비교해서
+보면 이해하기 쉽다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow_TP.tex}
+  \caption{텐서 병렬화가 적용된 전체 트랜스포머 레이어.
+  단일 노드 모델의 큰 선형 레이어는 $N_T$개의 작은 matmul로 나뉘어
+  서로 다른 디바이스에서 실행된다.
+  색깔 화살표는 부분 결과를 모으기 위해 집합 통신
+  (예: All-Reduce, All-Gather)이 필요한 위치를 나타내고,
+  나머지 로컬 계산은 Figure~\ref{fig:single_node_overall}과
+  구조적으로 동일하다.}
+  \label{fig:tp_overall_flow}
+\end{figure}
+
+% ------------------------ 6.1 MHA with Tensor Parallelism -------------
+\subsection{텐서 병렬화된 MHA}
+
+이제 텐서 병렬화를 멀티헤드 어텐션(MHA) 블록에 적용해 보자.
+Section~\ref{sec:sn}.2에서 보았듯이, 단일 노드의 어텐션 블록은
+입력 $\mathbf{X} \in [B,S,D]$를
+Q/K/V 프로젝션, 스케일된 내적 어텐션, 출력 프로젝션, 잔차 연결을 통해
+$\mathbf{A}_{\text{out}} \in [B,S,D]$로 사상한다.
+
+텐서 병렬화에서는 이 계산을 $N_T$개 디바이스에 다음과 같이 나눈다.
+\begin{itemize}
+  \item 각 디바이스는 일부 어텐션 헤드, 또는 동등하게
+        Q/K/V 프로젝션 출력 채널의 부분 집합만을 담당한다.
+  \item softmax와 값(value) 기반 가중합은 각 디바이스가
+        자신이 담당하는 헤드에 대해서만 로컬로 계산한다.
+  \item 출력 프로젝션은 로우 병렬(입력 분할) 형태로 구현하여,
+        각 디바이스의 부분 결과를 All-Reduce로 합산한 뒤,
+        단일 노드와 동일한 $\mathbf{A}_{\text{out}}$을 복원한다.
+\end{itemize}
+
+\subsubsection{순전파}
+
+입력은 단일 노드와 마찬가지로
+\[
+  \mathbf{X} \in \mathbb{R}^{B \times S \times D}
+\]
+이고, $N_H$개의 헤드와 각 헤드 차원 $D_h$에 대해
+$D = N_H D_h$를 가정한다.
+텐서 병렬화에서는 헤드를 $N_T$ 디바이스에 나누어,
+각 디바이스가 $N_H^{(t)}$개 헤드와 차원 $D_h^{(t)}$를 갖도록 한다
+(이들의 합이 전체 $N_H$, $D_h$가 되도록).
+
+\paragraph{(1) 정규화와 공유 입력.}
+먼저 레이어 정규화를 적용한다.
+\[
+  \mathbf{X}_{\text{norm}} = \mathrm{LN}(\mathbf{X})
+  \in \mathbb{R}^{B \times S \times D}.
+\]
+$\mathbf{X}_{\text{norm}}$는 텐서 병렬 디바이스 전체에 \emph{공유}되며,
+각 디바이스는 동일한 $\mathbf{X}_{\text{norm}}$를 본다.
+
+\paragraph{(2) Q/K/V 컬럼 병렬 프로젝션.}
+Q/K/V 프로젝션은 컬럼 병렬 선형으로 구현하여,
+각 디바이스가 출력 채널의 일부만 갖도록 한다.
+\[
+  W_Q = [W_Q^{(0)},\dots,W_Q^{(N_T-1)}], \quad
+  W_K = [W_K^{(0)},\dots,W_K^{(N_T-1)}], \quad
+  W_V = [W_V^{(0)},\dots,W_V^{(N_T-1)}],
+\]
+\[
+  W_Q^{(t)}, W_K^{(t)}, W_V^{(t)}
+  \in \mathbb{R}^{D \times D_{\text{head}}^{(t)}},
+\]
+와 같이 두면, 각 디바이스는 다음을 계산한다.
+\[
+  \mathbf{Q}^{(t)} = \mathbf{X}_{\text{norm}} W_Q^{(t)}, \quad
+  \mathbf{K}^{(t)} = \mathbf{X}_{\text{norm}} W_K^{(t)}, \quad
+  \mathbf{V}^{(t)} = \mathbf{X}_{\text{norm}} W_V^{(t)}.
+\]
+여기서 $D_{\text{head}}^{(t)}$는 디바이스 $t$가 담당하는
+헤드 차원의 총합이다.
+헤드 차원을 명시적으로 드러내면,
+\[
+  \mathbf{Q}^{(t)}, \mathbf{K}^{(t)}, \mathbf{V}^{(t)}
+  \in \mathbb{R}^{B \times N_H^{(t)} \times S \times D_h}.
+\]
+
+\paragraph{(3) 로컬 스케일드 어텐션.}
+각 디바이스는 자신이 담당하는 헤드에 대해서만
+스케일된 내적 어텐션을 계산한다.
+\[
+  \mathbf{S}^{(t)} = \frac{\mathbf{Q}^{(t)} (\mathbf{K}^{(t)})^{\top}}
+                           {\sqrt{D_h^{(t)}}},\qquad
+  \mathbf{A}_S^{(t)} = \mathrm{Softmax}(\mathrm{Mask}(\mathbf{S}^{(t)})),
+\]
+\[
+  \mathbf{A}_{\text{heads}}^{(t)} = \mathbf{A}_S^{(t)} \mathbf{V}^{(t)}.
+\]
+이 과정에는 디바이스 간 통신이 필요 없다.
+
+\paragraph{(4) 헤드 결합과 로우 병렬 출력 프로젝션.}
+각 디바이스는 자신이 담당하는 헤드들만 모아
+\[
+  \mathbf{A}_{\text{cat}}^{(t)}
+  \in \mathbb{R}^{B \times S \times D^{(t)}}
+\]
+를 만든다. 이후 출력 프로젝션을 로우 병렬 선형으로 구현한다.
+\[
+  W_O
+    = \begin{bmatrix} W_O^{(0)} \\ \vdots \\ W_O^{(N_T-1)} \end{bmatrix},\qquad
+  W_O^{(t)} \in \mathbb{R}^{D^{(t)} \times D}.
+\]
+각 디바이스는
+\[
+  \mathbf{A}_{\text{lin}}^{(t)}
+    = \mathbf{A}_{\text{cat}}^{(t)} W_O^{(t)} + \mathbf{b}_O^{(t)}
+\]
+를 계산하고, $t$에 대한 All-Reduce를 통해
+\[
+  \mathbf{A}_{\text{lin}}
+    = \sum_{t=0}^{N_T-1} \mathbf{A}_{\text{lin}}^{(t)}
+\]
+을 얻는다.
+이제 모든 디바이스가 동일한 $\mathbf{A}_{\text{lin}}$을 가지므로,
+이후 드롭아웃과 입력 $\mathbf{X}$와의 잔차 연결은
+각 디바이스에서 로컬로 적용할 수 있다.
+
+이 순서와 All-Reduce의 위치는
+Figure~\ref{fig:mha_forward_tp}에 명시적으로 표시되어 있다.
+
+\begin{landscape}
+\begin{figure}[p]
+  \centering
+  \input{mha_forward_TP.tex}
+  \caption{텐서 병렬화된 MHA의 순전파.
+  Q/K/V 프로젝션은 컬럼 병렬 선형으로 구현되어,
+  각 디바이스가 일부 헤드만을 소유한다.
+  각 디바이스는 자신이 담당하는 헤드에 대해 어텐션을 로컬로 계산하고,
+  헤드 출력들을 합친 뒤, 로우 병렬 출력 프로젝션을 적용한다.
+  이후 All-Reduce를 통해 모든 디바이스에서
+  단일 노드와 동일한 $\mathbf{A}_{\text{out}}$를 복원한다.}
+  \label{fig:mha_forward_tp}
+\end{figure}
+\end{landscape}
+
+\subsubsection{역전파}
+
+텐서 병렬 MHA의 역전파는
+Section~\ref{sec:sn}.2의 단일 노드 역전파와 같은 상위 구조를 따르되,
+기울기가 샤딩되어 있고, 집합 통신이 명시적으로 들어간다는 점만 다르다.
+각 디바이스에서 $\mathrm{d}\mathbf{A}_{\text{out}}$로부터 시작하여,
+다음과 같은 단계가 진행된다.
+
+\begin{itemize}
+  \item \textbf{출력 프로젝션 역전파}:
+        로우 병렬 출력 프로젝션은
+        $\mathrm{d}\mathbf{A}_{\text{lin}}$으로부터
+        로컬 기울기 $\mathrm{d}\mathbf{A}_{\text{cat}}^{(t)}$와
+        파라미터 기울기 $\mathrm{d}W_O^{(t)}, \mathrm{d}\mathbf{b}_O^{(t)}$를 계산한다.
+  \item \textbf{헤드 역전파}:
+        각 디바이스는 자신이 담당하는 헤드를 따라 역전파를 수행하여
+        $\mathrm{d}\mathbf{V}^{(t)}$, $\mathrm{d}\mathbf{A}_S^{(t)}$를 얻고,
+        다시 스케일된 내적 및 소프트맥스 역전파를 통해
+        $\mathrm{d}\mathbf{Q}^{(t)}$, $\mathrm{d}\mathbf{K}^{(t)}$를 계산한다.
+  \item \textbf{Q/K/V 프로젝션 역전파}:
+        컬럼 병렬 Q/K/V 선형 레이어는
+        로컬 파라미터 기울기
+        $\mathrm{d}W_Q^{(t)}, \mathrm{d}W_K^{(t)}, \mathrm{d}W_V^{(t)}$와
+        정규화된 입력에 대한 부분 기울기
+        $\mathrm{d}\mathbf{X}_{\text{norm}}^{(t)}$를 계산한다.
+  \item \textbf{입력 기울기에 대한 All-Reduce}:
+        $\mathbf{X}_{\text{norm}}$는 모든 디바이스에 공유되므로,
+        모든 Q/K/V shard에서 나온 기울기를 합산해야 한다:
+        \[
+          \mathrm{d}\mathbf{X}_{\text{norm}}
+            = \sum_{t=0}^{N_T-1} \mathrm{d}\mathbf{X}_{\text{norm}}^{(t)},
+        \]
+        이는 $t$에 대한 All-Reduce로 구현된다.
+  \item \textbf{레이어 정규화 역전파}:
+        마지막으로 레이어 정규화 역전파를 통해
+        $\mathrm{d}\mathbf{X}_{\text{norm}}$을
+        원래 입력 $\mathbf{X}$에 대한 기울기
+        $\mathrm{d}\mathbf{X}$로 변환한다.
+\end{itemize}
+
+이 과정은 Figure~\ref{fig:mha_backward_tp}에서
+전체 계산 그래프로 펼쳐져 있고,
+각 All-Reduce/All-Gather의 위치가 명시되어 있다.
+
+\begin{landscape}
+\begin{figure}[p]
+  % no \centering here to avoid compilation issues
+  \input{mha_backward_TP.tex}
+  \caption{텐서 병렬화된 MHA의 역전파.
+  각 디바이스는 로컬 Q/K/V 프로젝션과 자신이 담당하는
+  어텐션 헤드를 따라 역전파를 수행한다.
+  정규화된 입력에 대한 기울기는 All-Reduce를 통해 모든 디바이스에서
+  합산되며, 파라미터 기울기는 각 shard
+  $W_Q^{(t)}, W_K^{(t)}, W_V^{(t)}, W_O^{(t)}$에 대해
+  로컬로 누적된다.}
+  \label{fig:mha_backward_tp}
+\end{figure}
+\end{landscape}
+
+% ------------------------ 6.2 MLP with Tensor Parallelism -------------
+\subsection{텐서 병렬화된 MLP}
+
+피드포워드(MLP) 블록은 두 개의 선형 레이어를 가지기 때문에,
+하나는 컬럼 병렬, 다른 하나는 로우 병렬로 구현하기에 특히 적합하다.
+Section~\ref{sec:sn}.3에서 단일 노드 MLP는
+$\mathbf{H} \in [B,S,D]$를 $\mathbf{Y} \in [B,S,D]$로 사상하며,
+다음과 같은 구조를 가진다.
+\[
+  \mathbf{Z}_{\text{up}} = \mathbf{H} W_{\text{up}} + \mathbf{b}_{\text{up}},
+  \quad \mathbf{U} = \phi(\mathbf{Z}_{\text{up}}),
+\]
+\[
+  \mathbf{Z}_{\text{down}} = \mathbf{U} W_{\text{down}} + \mathbf{b}_{\text{down}},
+  \quad \mathbf{Y} = \mathbf{H} + \mathrm{Dropout}(\mathbf{Z}_{\text{down}}),
+\]
+여기서 $W_{\text{up}} \in \mathbb{R}^{D \times D_{\text{ff}}}$,
+$W_{\text{down}} \in \mathbb{R}^{D_{\text{ff}} \times D}$이다.
+
+텐서 병렬화에서는 $\mathbf{H}$가 모든 디바이스에 공유된다고 가정하고,
+상향(up) 선형은 컬럼 병렬, 하향(down) 선형은 로우 병렬로 구현한다.
+
+\subsubsection{순전파}
+
+\paragraph{(1) 컬럼 병렬 상향 프로젝션.}
+상향 선형 레이어를
+\[
+  W_{\text{up}} = [W_{\text{up}}^{(0)},\dots,W_{\text{up}}^{(N_T-1)}],\qquad
+  W_{\text{up}}^{(t)} \in \mathbb{R}^{D \times D_{\text{ff}}^{(t)}}
+\]
+로 나눈다.
+각 디바이스는 공유 입력 $\mathbf{H}$에 대해
+\[
+  \mathbf{Z}_{\text{up}}^{(t)}
+    = \mathbf{H} W_{\text{up}}^{(t)} + \mathbf{b}_{\text{up}}^{(t)},
+  \qquad
+  \mathbf{Z}_{\text{up}}^{(t)} \in \mathbb{R}^{B \times S \times D_{\text{ff}}^{(t)}}
+\]
+를 계산한다.
+전체 $\mathbf{Z}_{\text{up}}$는 개념적으로
+\[
+  \mathbf{Z}_{\text{up}}
+    = \mathrm{Concat}_t \mathbf{Z}_{\text{up}}^{(t)}
+\]
+로 구성되지만, 이후 연산이 헤드/피처 축을 따라 원소별로 작동하는 경우,
+실제로는 각 shard만 가지고 있어도 된다.
+
+\paragraph{(2) 로컬 비선형 활성 함수.}
+비선형 함수 $\phi$는 각 디바이스에서 shard별로 적용된다.
+\[
+  \mathbf{U}^{(t)} = \phi(\mathbf{Z}_{\text{up}}^{(t)}).
+\]
+
+\paragraph{(3) 로우 병렬 하향 프로젝션.}
+하향 선형 레이어는 입력 차원 방향으로 분할한다.
+\[
+  W_{\text{down}}
+    = \begin{bmatrix}
+        W_{\text{down}}^{(0)} \\
+        \vdots \\
+        W_{\text{down}}^{(N_T-1)}
+      \end{bmatrix},
+  \qquad
+  W_{\text{down}}^{(t)} \in \mathbb{R}^{D_{\text{ff}}^{(t)} \times D}.
+\]
+각 디바이스는 로컬 shard에 대해
+\[
+  \mathbf{Z}_{\text{down}}^{(t)}
+    = \mathbf{U}^{(t)} W_{\text{down}}^{(t)} + \mathbf{b}_{\text{down}}^{(t)}
+\]
+를 계산한다.
+이후 $t$에 대한 All-Reduce를 수행하여 전체 down-projection 출력을 얻는다.
+\[
+  \mathbf{Z}_{\text{down}}
+    = \sum_{t=0}^{N_T-1} \mathbf{Z}_{\text{down}}^{(t)}.
+\]
+
+\paragraph{(4) 드롭아웃과 잔차 연결.}
+모든 디바이스가 동일한 $\mathbf{Z}_{\text{down}}$와
+$\mathbf{H}$를 가지므로, 드롭아웃과 잔차 연결
+\[
+  \mathbf{Y} = \mathbf{H} + \mathrm{Dropout}(\mathbf{Z}_{\text{down}})
+\]
+은 각 디바이스에서 로컬로 수행할 수 있다.
+
+이 전체 순서는 Figure~\ref{fig:mlp_forward_tp}에 요약되어 있으며,
+순전파 경로에서 유일한 집합 통신은
+down-projection 이후의 All-Reduce이다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_forward_TP.tex}
+  \caption{텐서 병렬화된 MLP의 순전파.
+  상향 프로젝션은 컬럼 병렬 선형으로 구현되어,
+  각 디바이스가 중간 피처의 일부만을 보유한다.
+  하향 프로젝션은 로우 병렬로 구현되며,
+  디바이스 간 All-Reduce를 통해 전체
+  $\mathbf{Z}_{\text{down}}$를 복원한 뒤,
+  드롭아웃과 잔차 연결이 로컬로 적용된다.}
+  \label{fig:mlp_forward_tp}
+\end{figure}
+
+\subsubsection{역전파}
+
+텐서 병렬 MLP의 역전파는
+단일 노드 역전파 그래프(Figure~\ref{fig:single_node_mlp_backward})와
+동일한 구조를 사용하되,
+파라미터와 활성값이 샤딩되어 있고,
+적절한 위치에 All-Reduce가 들어간다는 점만 다르다.
+
+각 디바이스에서 $\mathrm{d}\mathbf{Y}$로부터 시작하여
+다음 순서로 진행된다.
+
+\begin{enumerate}
+  \item \textbf{잔차 및 드롭아웃 역전파}:
+        단일 노드와 마찬가지로, 기울기는 항등 경로와
+        최종 드롭아웃 경로로 나뉘어,
+        각 디바이스에서 $\mathrm{d}\mathbf{Z}_{\text{down}}$을 얻는다.
+  \item \textbf{하향 프로젝션 역전파 (로우 병렬)}:
+        각 디바이스는 자신의 shard $W_{\text{down}}^{(t)}$와
+        로컬 활성값 $\mathbf{U}^{(t)}$를 사용해
+        \[
+          \mathrm{d}\mathbf{U}^{(t)},\quad
+          \mathrm{d}W_{\text{down}}^{(t)},\quad
+          \mathrm{d}\mathbf{b}_{\text{down}}^{(t)}
+        \]
+        를 계산한다.
+        $\mathrm{d}\mathbf{U}^{(t)}$를 구하는 데에는
+        별도의 통신이 필요 없다.
+  \item \textbf{활성 함수 역전파}:
+        비선형 함수 $\phi$의 역전파를 각 디바이스에서 원소별로 적용하여
+        $\mathrm{d}\mathbf{Z}_{\text{up}}^{(t)}$를 얻는다.
+  \item \textbf{상향 프로젝션 역전파 (컬럼 병렬)}:
+        컬럼 병렬 상향 프로젝션에 대해,
+        각 디바이스는 $W_{\text{up}}^{(t)}$에 대한 로컬 기울기와
+        입력에 대한 부분 기울기 $\mathrm{d}\mathbf{H}^{(t)}$를 계산한다.
+        $\mathbf{H}$는 모든 디바이스에 공유되므로,
+        이들을 합산해야 한다:
+        \[
+          \mathrm{d}\mathbf{H}
+            = \sum_{t=0}^{N_T-1} \mathrm{d}\mathbf{H}^{(t)},
+        \]
+        이는 $t$에 대한 All-Reduce로 구현된다.
+  \item \textbf{레이어 정규화 역전파(있는 경우)}:
+        MLP 앞에 레이어 정규화가 있는 pre-LN 구조라면,
+        $\mathrm{d}\mathbf{H}$는 추가적인 레이어 정규화 역전파를
+        거쳐 이전 블록으로 전달된다.
+\end{enumerate}
+
+이러한 역전파 과정은 Figure~\ref{fig:mlp_backward_tp}에
+전체 계산 그래프로 정리되어 있으며,
+입력 기울기 $\mathrm{d}\mathbf{H}$에 대한 All-Reduce 위치가
+명확히 표시되어 있다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_backward_TP.tex}
+  \caption{텐서 병렬화된 MLP의 역전파.
+  로우 병렬 down-projection, 활성 함수, 컬럼 병렬 up-projection,
+  (필요 시) 레이어 정규화를 역순으로 따라가며,
+  각 shard 파라미터와 입력에 대한 기울기를 계산한다.
+  특히 up-projection에서 얻은 입력 기울기
+  $\mathrm{d}\mathbf{H}^{(t)}$는 All-Reduce를 통해 합산되어
+  전역 $\mathrm{d}\mathbf{H}$를 형성한다.}
+  \label{fig:mlp_backward_tp}
+\end{figure}
+
+\subsection{요약}
+
+요약하면, 텐서 병렬화는 단일 노드 트랜스포머의 각 큰 선형 연산을
+컬럼 병렬 / 로우 병렬 패턴으로 구현함으로써,
+\begin{itemize}
+  \item 디바이스당 파라미터·활성값 메모리를 줄이고,
+  \item 각 디바이스에서의 로컬 계산 구조는 단일 노드와 거의 동일하게 유지하며,
+  \item 필요한 최소한의 All-Reduce / All-Gather를 통해
+        단일 노드와 동일한 결과를 얻는다.
+\end{itemize}
+
+모든 경우에, 각 디바이스에서의 로컬 계산 그래프는
+Section~\ref{sec:sn}에서 설명한 단일 노드 계산과 구조적으로 동일하다.
+달라지는 것은 \emph{파라미터와 활성값을 어떻게 샤딩하는지, 그리고
+어디에서 집합 통신을 수행하는지}뿐이다.
+이 때문에 텐서 병렬화는 단일 노드 트랜스포머를 자연스럽게 확장한 형태로,
+단일 가속기의 메모리에 들어가지 않는 대규모 모델에 특히 적합하다.

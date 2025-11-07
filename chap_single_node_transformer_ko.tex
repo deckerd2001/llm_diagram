@@ -1,0 +1,401 @@
+% ==========================================================
+% 5. 단일 노드 트랜스포머: 순전파와 역전파
+% ==========================================================
+\section{단일 노드 트랜스포머: 순전파와 역전파}
+\label{sec:sn}
+
+이 장에서는 병렬화를 전혀 사용하지 않는 \emph{단일 노드(single-node)} 환경에서
+하나의 트랜스포머 레이어가 어떻게 동작하는지 정리한다.
+순전파와 역전파 모두에 대해 텐서의 모양과 데이터 흐름을 중심으로 설명하며,
+각 구성요소를 분리해서 살펴본다.
+
+다루는 주요 구성 요소는 다음과 같다.
+\begin{itemize}
+  \item \textbf{입력 임베딩 레이어}: 토큰 ID를 연속 벡터 표현으로 변환.
+  \item \textbf{멀티헤드 어텐션(MHA)}: 시퀀스 내 위치들 사이의 어텐션 계산.
+  \item \textbf{피드포워드 네트워크(MLP/FFN)}: 위치별 비선형 변환.
+  \item \textbf{출력 프로젝션과 손실}: 은닉 상태를 로그릿으로投영하고 손실 계산.
+\end{itemize}
+
+우리는 배치 크기가 $B$, 시퀀스 길이가 $S$인 토큰 ID 배치
+$\mathbf{T} \in [B,S]$가 주어진다고 가정한다.
+레이어 내부의 은닉 표현은 보통
+\[
+  \mathbf{X} \in \mathbb{R}^{B \times S \times D}
+\]
+와 같이 표현되며, 여기서 $D$는 모델(은닉) 차원이다.
+역전파에서는 스칼라 손실 $\mathcal{L}$에 대한 기울기가
+이러한 텐서들과 대응되는 가중치 행렬들을 따라 어떻게 흐르는지를 추적한다.
+
+% ------------------------ 5.0 Overall Layer Flow ---------------------
+
+\subsection{전체 트랜스포머 레이어 흐름}
+
+각 구성 요소를 개별적으로 보기 전에,
+단일 노드 트랜스포머 레이어 전체에서 순전파와 역전파가 어떻게 흘러가는지
+상위 수준에서 먼저 살펴보자.
+Figure~\ref{fig:single_node_overall}은
+입력 임베딩으로부터 MHA, MLP, 출력 프로젝션을 거쳐 손실에 이르는
+순전파 경로와, 다시 손실에서 역전파되어 입력 임베딩까지 전파되는
+기울기 흐름을 한 그림에 요약한 것이다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow.tex}
+  \caption{단일 노드 트랜스포머 레이어의 전체 순전파 및 역전파 흐름.
+  실선 화살표는 순전파 활성값을, 점선 화살표는 손실 $\mathcal{L}$로부터
+  출력 프로젝션, MLP, MHA를 거쳐 입력 임베딩으로 되돌아가는 기울기 흐름을
+  나타낸다.}
+  \label{fig:single_node_overall}
+\end{figure}
+
+
+% ------------------------ 5.1 Input Embedding ------------------------
+
+\subsection{입력 임베딩 레이어}
+
+입력 임베딩 레이어는 이산적인 토큰 ID를 연속 벡터 표현으로 변환하여,
+트랜스포머 스택의 첫 번째 은닉 상태
+$\mathbf{X} \in \mathbb{R}^{B \times S \times D}$를 만들어낸다.
+다음과 같은 파라미터를 사용한다고 가정한다.
+\begin{itemize}
+  \item 토큰 임베딩 행렬 $\mathbf{E} \in \mathbb{R}^{V \times D}$:
+        $V$는 어휘(vocabulary) 크기.
+  \item 위치 임베딩 테이블 $\mathbf{P} \in \mathbb{R}^{S \times D}$:
+        학습 가능한 테이블이거나 사인/코사인 기반의 고정 테이블.
+\end{itemize}
+
+토큰 ID 배치 $\mathbf{T} \in [B,S]$가 주어졌을 때, 임베딩 레이어는 개념적으로
+다음과 같은 연산을 수행한다.
+\begin{itemize}
+  \item 각 위치 $(b,s)$에 대해 토큰 ID $\mathbf{T}[b,s]$를
+        토큰 임베딩 행렬 $\mathbf{E}$의 해당 행으로 매핑하여
+        토큰 임베딩 벡터를 얻는다.
+  \item 시퀀스 위치 $s$에 대응하는 위치 임베딩 $\mathbf{P}[s,:]$를
+        토큰 임베딩에 더한다.
+  \item 필요하다면 드롭아웃을 적용하여 초기 은닉 상태
+        $\mathbf{X} \in [B,S,D]$를 얻는다.
+\end{itemize}
+
+\begin{figure}[htbp]
+  \centering
+  \input{input_embedding.tex}
+  \caption{입력 임베딩 레이어의 순전파.
+  토큰 ID는 임베딩 행렬 $\mathbf{E}$를 통해 토큰 임베딩으로 변환되고,
+  위치 임베딩 $\mathbf{P}$가 더해진 뒤, (선택적인) 드롭아웃을 거쳐
+  초기 은닉 상태 $\mathbf{X} \in [B,S,D]$를 생성한다.}
+  \label{fig:single_node_input_embedding}
+\end{figure}
+
+역전파에서는 손실 $\mathcal{L}$에 대한 기울기가
+$\mathrm{d}\mathbf{X}$로부터 각 임베딩 파라미터로 전파된다.
+토큰 임베딩 행렬 $\mathbf{E}$와 위치 임베딩 테이블 $\mathbf{P}$에 대한 기울기는,
+각 위치에서 해당 임베딩이 사용된 횟수를 따라 합산(summing)하여 누적된다.
+즉, 같은 토큰 ID나 위치가 여러 번 등장하면,
+그 위치들로부터의 기울기가 같은 임베딩 파라미터에 더해진다.
+
+% ------------------------ 5.2 Multi-Head Attention -------------------
+
+\subsection{멀티헤드 어텐션 (MHA)}
+
+멀티헤드 어텐션은 모델이 서로 다른 표현 하위공간에서
+여러 위치의 정보를 동시에 참조할 수 있게 해주는 메커니즘이다.
+구성 요소 관점에서 보면 다음과 같이 나눌 수 있다.
+\begin{itemize}
+  \item \textbf{선형 프로젝션}: 입력을 쿼리(Q), 키(K), 값(V)로 투영.
+  \item \textbf{스케일된 내적 어텐션}: 쿼리–키 내적을 통해 어텐션 스코어를 계산하고,
+        소프트맥스로 정규화한 뒤, 값 벡터의 가중합을 계산.
+  \item \textbf{멀티헤드 분할}: $N_H$개의 헤드를 병렬로 처리하며,
+        각 헤드의 차원은 $D_h$이고 전체 모델 차원은 $D = N_H D_h$.
+  \item \textbf{출력 프로젝션}: 각 헤드 출력을 다시 결합(concatenate)한 뒤,
+        모델 차원 $D$로 되돌리는 선형 레이어.
+\end{itemize}
+
+\subsubsection{순전파}
+
+MHA 블록의 입력은 이전 블록(입력 임베딩 또는 앞선 레이어)의 출력인
+\[
+  \mathbf{X} \in \mathbb{R}^{B \times S \times D}
+\]
+이다.
+우리는 다음과 같은 순서를 따른다.
+
+\paragraph{(1) 입력 레이어 정규화.}
+먼저 은닉 차원 방향으로 레이어 정규화(layer normalization)를 적용한다.
+\[
+  \mathbf{X}_{\text{norm}} = \mathrm{LN}(\mathbf{X})
+  \in \mathbb{R}^{B \times S \times D}.
+\]
+레이어 정규화는 학습 가능한 스케일/시프트 파라미터
+$\boldsymbol{\gamma}, \boldsymbol{\beta} \in \mathbb{R}^{D}$를 가지지만,
+도식에서는 주로 정규화된 활성값 $\mathbf{X}_{\text{norm}}$에 초점을 맞춘다.
+
+\paragraph{(2) Q/K/V 선형 프로젝션.}
+정규화된 입력에 세 개의 선형 레이어를 적용하여
+쿼리, 키, 값 텐서를 생성한다.
+\[
+  \mathbf{Q} = \mathbf{X}_{\text{norm}} W_Q, \quad
+  \mathbf{K} = \mathbf{X}_{\text{norm}} W_K, \quad
+  \mathbf{V} = \mathbf{X}_{\text{norm}} W_V.
+\]
+각 가중치 행렬은 보통
+$W_Q, W_K, W_V \in \mathbb{R}^{D \times D}$ 또는
+헤드 차원을 고려한 적절한 모양을 가진다.
+이후 표현을 위해
+$\mathbf{Q}, \mathbf{K}, \mathbf{V}$를
+\[
+  \mathbf{Q}, \mathbf{K}, \mathbf{V}
+  \in \mathbb{R}^{B \times N_H \times S \times D_h}
+\]
+와 같이 헤드 차원을 명시적으로 드러내는 형태로 재배열(shaping)한다.
+
+\paragraph{(3) 스케일된 내적 어텐션.}
+각 헤드 $h$에 대해, 쿼리와 키의 스케일된 내적을 통해 어텐션 스코어를 계산한다.
+\[
+  \mathbf{A}[b,h,s,t]
+  = \frac{1}{\sqrt{D_h}}\,
+    \mathbf{Q}[b,h,s,:] \cdot \mathbf{K}[b,h,t,:],
+\]
+여기서 $s$는 쿼리 위치, $t$는 키 위치이다.
+소프트맥스를 시퀀스 축 $t$에 대해 적용하여
+어텐션 가중치 $\mathbf{W}_{\text{att}}$를 얻고,
+이를 값 텐서 $\mathbf{V}$에 곱해 각 위치의 출력 벡터를 계산한다.
+이 연산들의 결과는
+\[
+  \mathbf{A}_{\text{heads}}
+  \in \mathbb{R}^{B \times N_H \times S \times D_h}
+\]
+와 같은 형태를 가진다.
+
+\paragraph{(4) 헤드 결합 및 출력 프로젝션.}
+헤드 차원 방향으로 모든 헤드를 이어 붙여(concatenate) 하나의 텐서로 만들고,
+이를 다시 모델 차원 $D$로 투영하는 선형 레이어를 적용한다.
+\[
+  \mathbf{A}_{\text{out}} = \mathrm{MHA}(\mathbf{X}) \in \mathbb{R}^{B \times S \times D}.
+\]
+이 텐서는 이후 MLP 블록으로 전달되는 어텐션 출력이다.
+도식에서는 각 엣지에 위에서 설명한 텐서 모양이 함께 표시된다
+(Figure~\ref{fig:single_node_mha_forward} 참고).
+
+\begin{landscape}
+\begin{figure}[htbp]
+  % \centering
+  \input{mha_forward.tex}
+  \caption{단일 노드 MHA 블록의 순전파.
+  입력 $\mathbf{X}$는 레이어 정규화를 거쳐 Q/K/V 선형 프로젝션으로 매핑되고,
+  스케일된 내적 어텐션과 소프트맥스를 통해 값 텐서 $\mathbf{V}$의
+  가중합을 계산한 뒤, 여러 헤드를 결합하여
+  $\mathbf{A}_{\text{out}} \in [B,S,D]$를 생성한다.}
+  \label{fig:single_node_mha_forward}
+\end{figure}
+\end{landscape}
+
+\subsubsection{역전파}
+
+역전파에서는 손실 $\mathcal{L}$에 대한 기울기가
+$\mathrm{d}\mathbf{A}_{\text{out}}$에서 시작하여
+Q/K/V, 입력 $\mathbf{X}_{\text{norm}}$, 그리고 가중치 행렬
+$W_Q, W_K, W_V$, 출력 프로젝션 가중치까지 거꾸로 전파된다.
+Figure~\ref{fig:single_node_mha_backward}는
+각 역전파 연산자(\texttt{dMatmul}, \texttt{dSM} 등)가
+어떤 텐서와 기울기를 주고받는지 시각적으로 보여준다.
+
+핵심 아이디어는 다음과 같다.
+\begin{itemize}
+  \item 출력 프로젝션의 역전파를 통해
+        $\mathrm{d}\mathbf{A}_{\text{heads}}$와
+        출력 프로젝션 가중치의 기울기를 얻는다.
+  \item 스케일된 내적 어텐션과 소프트맥스의 역전파를 통해
+        $\mathrm{d}\mathbf{Q}$, $\mathrm{d}\mathbf{K}$,
+        $\mathrm{d}\mathbf{V}$를 계산한다.
+  \item Q/K/V 선형 레이어의 역전파를 통해
+        입력 정규화 텐서 $\mathbf{X}_{\text{norm}}$에 대한 기울기와
+        각 가중치 행렬에 대한 기울기를 계산한다.
+  \item 마지막으로 레이어 정규화 역전파를 통해
+        원래 입력 $\mathbf{X}$에 대한 기울기를 얻는다.
+\end{itemize}
+이 모든 단계는 Section~\ref{sec:gradients-basics}에서 소개한
+\emph{국소 연산자 + 체인 룰} 관점으로 이해할 수 있다.
+
+\begin{landscape}
+\begin{figure}[htbp]
+  % \centering
+  \input{mha_backward.tex}
+  \caption{단일 노드 MHA 블록의 역전파.
+  출력 $\mathbf{A}_{\text{out}}$에 대한 기울기에서 시작하여,
+  출력 프로젝션, 어텐션 연산, Q/K/V 선형 레이어, 레이어 정규화를
+  역순으로 거치며 입력과 파라미터에 대한 기울기를 계산한다.}
+  \label{fig:single_node_mha_backward}
+\end{figure}
+\end{landscape}
+
+
+% ------------------------ 5.3 MLP / FFN ------------------------------
+
+\subsection{피드포워드 네트워크 (MLP / FFN)}
+
+트랜스포머 블록의 MLP(또는 FFN) 부분은
+각 시퀀스 위치별로 독립적인 비선형 변환을 수행한다.
+구조적으로는 두 개의 선형 레이어와 중간 비선형 함수로 이루어져 있으며,
+앞에서 정의한
+\[
+  \mathbf{X}, \mathbf{Y} \in \mathbb{R}^{B \times S \times D}, \quad
+  \mathbf{Z}_{\text{up}}, \mathbf{Z}_{\text{act}}
+  \in \mathbb{R}^{B \times S \times D_{\text{ff}}}
+\]
+를 사용한다.
+
+\subsubsection{순전파}
+
+MHA 블록의 출력을 $\mathbf{A}_{\text{out}}$라 두고,
+잔차 연결까지 반영된 텐서를 $\mathbf{X}_2$라고 하자
+(Section~\ref{sec:background}의 트랜스포머 블록 구조 참조).
+MLP 블록에서는 다음과 같은 순서를 따른다.
+
+\paragraph{(1) 레이어 정규화.}
+\[
+  \mathbf{X}_3 = \mathrm{LN}(\mathbf{X}_2)
+  \in \mathbb{R}^{B \times S \times D}.
+\]
+
+\paragraph{(2) 상향 선형 레이어 (up-projection).}
+\[
+  \mathbf{Z}_{\text{up}} = \mathbf{X}_3 W_{\text{up}} + \mathbf{b}_{\text{up}},
+\]
+여기서 $W_{\text{up}} \in \mathbb{R}^{D \times D_{\text{ff}}}$,
+$\mathbf{b}_{\text{up}} \in \mathbb{R}^{D_{\text{ff}}}$이다.
+
+\paragraph{(3) 비선형 활성 함수.}
+\[
+  \mathbf{Z}_{\text{act}} = \phi(\mathbf{Z}_{\text{up}}),
+\]
+GELU, ReLU 등 원소별 비선형 함수를 사용한다.
+
+\paragraph{(4) 하향 선형 레이어 (down-projection).}
+\[
+  \mathbf{H}_{\text{mlp}}
+  = \mathbf{Z}_{\text{act}} W_{\text{down}} + \mathbf{b}_{\text{down}},
+\]
+여기서 $W_{\text{down}} \in \mathbb{R}^{D_{\text{ff}} \times D}$,
+$\mathbf{b}_{\text{down}} \in \mathbb{R}^{D}$이다.
+
+\paragraph{(5) 잔차 연결.}
+최종적으로 MLP 출력은
+\[
+  \mathbf{X}_{\text{out}} = \mathbf{X}_2 + \mathbf{H}_{\text{mlp}}
+\]
+와 같이 잔차 연결을 통해 합쳐진다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_forward.tex}
+  \caption{단일 노드 MLP/FFN 블록의 순전파.
+  입력 $\mathbf{X}_2$는 레이어 정규화를 거쳐 상향 선형 레이어,
+  비선형 활성 함수, 하향 선형 레이어를 통과한 뒤,
+  잔차 연결을 통해 $\mathbf{X}_{\text{out}}$을 형성한다.}
+  \label{fig:single_node_mlp_forward}
+\end{figure}
+
+\subsubsection{역전파}
+
+역전파에서는 $\mathrm{d}\mathbf{X}_{\text{out}}$에서 시작하여
+잔차 연결을 통해 $\mathrm{d}\mathbf{X}_2$와
+$\mathrm{d}\mathbf{H}_{\text{mlp}}$를 얻고,
+이후 각 선형 레이어와 비선형 함수, 레이어 정규화를
+역순으로 따라가며 기울기를 계산한다.
+
+구체적으로는 다음과 같은 단계로 이해할 수 있다.
+\begin{itemize}
+  \item 잔차 연결 역전파: $\mathrm{d}\mathbf{X}_2$와
+        $\mathrm{d}\mathbf{H}_{\text{mlp}}$가 동일한 기울기를 받는다.
+  \item 하향 선형 레이어 역전파를 통해
+        $\mathrm{d}\mathbf{Z}_{\text{act}}$, $W_{\text{down}}$과
+        $\mathbf{b}_{\text{down}}$에 대한 기울기를 계산한다.
+  \item 비선형 함수 역전파를 통해 $\mathrm{d}\mathbf{Z}_{\text{up}}$를 얻는다.
+  \item 상향 선형 레이어 역전파를 통해
+        $\mathrm{d}\mathbf{X}_3$, $W_{\text{up}}$과
+        $\mathbf{b}_{\text{up}}$에 대한 기울기를 계산한다.
+  \item 마지막으로 레이어 정규화 역전파를 통해
+        $\mathrm{d}\mathbf{X}_2$를 입력 방향으로 전파한다.
+\end{itemize}
+
+\begin{figure}[htbp]
+  \centering
+  \input{mlp_backward.tex}
+  \caption{단일 노드 MLP/FFN 블록의 역전파.
+  잔차 연결, 하향/상향 선형 레이어, 비선형 함수, 레이어 정규화를
+  역순으로 통과하며, 각 입력과 파라미터에 대한 기울기를 계산한다.}
+  \label{fig:single_node_mlp_backward}
+\end{figure}
+
+
+% ------------------------ 5.4 Output Projection and Loss -------------
+
+\subsection{출력 프로젝션과 손실}
+
+마지막으로, 트랜스포머 레이어의 출력
+$\mathbf{X}_{\text{out}} \in \mathbb{R}^{B \times S \times D}$에서
+언어 모델 로그릿(logits)을 만들고, 손실을 계산하는 부분을 살펴본다.
+여기서는 언어 모델링 또는 다음 토큰 예측을 위한
+전형적인 설정을 가정한다.
+
+출력 프로젝션은 언어 모델 행렬 $W_{\text{lm}} \in \mathbb{R}^{D \times V}$
+및 bias $\mathbf{b}_{\text{lm}} \in \mathbb{R}^{V}$를 사용하여,
+각 위치마다 어휘 크기 $V$에 대한 로그릿을 생성한다.
+\[
+  \mathbf{Z}_{\text{lm}}[b,s,:]
+  = \mathbf{X}_{\text{out}}[b,s,:]\, W_{\text{lm}} + \mathbf{b}_{\text{lm}}.
+\]
+손실은 보통 소프트맥스-교차 엔트로피(softmax-cross-entropy)로 정의된다.
+
+\subsubsection{순전파 (로그릿, 소프트맥스, 손실)}
+
+순전파는 개념적으로 다음과 같은 단계를 따른다.
+\begin{itemize}
+  \item $\mathbf{X}_{\text{out}}$에 선형 레이어를 적용하여
+        로그릿 텐서 $\mathbf{Z}_{\text{lm}} \in \mathbb{R}^{B \times S \times V}$를 얻는다.
+  \item 각 위치별로 소프트맥스를 적용하여 확률 분포를 계산한다.
+  \item 목표 토큰(예: 다음 토큰)의 원-핫(one-hot) 벡터와 로그릿을 사용해
+        교차 엔트로피 손실을 계산하고, 전체 배치/시퀀스에 대해 평균(또는 합)을 취한다.
+\end{itemize}
+
+\begin{figure}[htbp]
+  \centering
+  \input{output_proj.tex}
+  \caption{출력 프로젝션과 손실의 순전파.
+  은닉 상태 $\mathbf{X}_{\text{out}}$는 언어 모델 프로젝션
+  $(W_{\text{lm}}, \mathbf{b}_{\text{lm}})$을 통해 로그릿으로 변환되고,
+  소프트맥스와 교차 엔트로피를 거쳐 스칼라 손실 $\mathcal{L}$이 계산된다.}
+  \label{fig:single_node_output_forward}
+\end{figure}
+
+\subsubsection{역전파}
+
+역전파에서는 손실 $\mathcal{L}$로부터 시작하여,
+소프트맥스와 교차 엔트로피를 통합한 형태의 기울기가
+로그릿 $\mathbf{Z}_{\text{lm}}$에 대해 계산된다.
+실제로는 소프트맥스와 교차 엔트로피의 역전파가 하나의
+간단한 표현으로 합쳐지는 경우가 많다.
+
+그 다음 단계는 다음과 같다.
+\begin{itemize}
+  \item 로그릿에 대한 기울기 $\mathrm{d}\mathbf{Z}_{\text{lm}}$를
+        출력 프로젝션 선형 레이어를 통해 역전파하여,
+        $\mathrm{d}\mathbf{X}_{\text{out}}$와
+        $\mathrm{d}W_{\text{lm}}, \mathrm{d}\mathbf{b}_{\text{lm}}$을 얻는다.
+  \item $\mathrm{d}\mathbf{X}_{\text{out}}$는 다시 이전 MLP/FFN 블록과
+        MHA, 임베딩 레이어로 전달된다
+        (Figure~\ref{fig:single_node_overall} 참고).
+\end{itemize}
+
+\begin{figure}[htbp]
+  \centering
+  \input{output_proj_backward.tex}
+  \caption{출력 프로젝션과 손실의 역전파.
+  손실로부터의 기울기는 소프트맥스와 교차 엔트로피를 거쳐
+  로그릿으로 전달되고, 다시 언어 모델 프로젝션을 통해
+  $\mathrm{d}\mathbf{A}_{\text{out}}$과
+  파라미터 기울기 $\mathrm{d}\mathbf{W}_{\text{lm}}$,
+  $\mathrm{d}\mathbf{b}_{\text{lm}}$를 만들어 낸다.}
+  \label{fig:single_node_output_backward}
+\end{figure}

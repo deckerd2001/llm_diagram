@@ -1,0 +1,181 @@
+% ==========================================================
+% 4. 그래프 표기와 도식 규칙
+% ==========================================================
+\section{그래프 표기와 도식 규칙}
+\label{sec:graph-conventions}
+
+이 문서의 다이어그램은 트랜스포머 레이어 안에서 텐서가 어떻게 흐르는지,
+그리고 순전파와 역전파에서 어떤 연산이 수행되는지 \emph{시각적으로} 드러내기 위해 설계되었다.
+특히 우리는 다음과 같은 것들을 명확히 보여주고자 한다.
+\begin{itemize}
+  \item 각 엣지가 어떤 텐서(활성값 또는 기울기)를 나타내는지,
+  \item 그 텐서의 차원(예: $[B, S, D]$, $[B, N_H, S, D_h]$ 등)이 무엇인지,
+  \item 어떤 노드가 어떤 연산(행렬 곱, softmax, 드롭아웃, 레이어 정규화, 통신, 브로드캐스트 등)에 해당하는지,
+  \item 순전파에 대응하는 역전파 연산자가 어떻게 배치되는지.
+\end{itemize}
+
+이 장에서는 이러한 그림들을 읽기 위한 기본 규칙을 정리한다.
+앞 장에서 소개한 추상적인 순전파/역전파 연산자(Section~\ref{sec:gradients-basics})를,
+구체적인 노드와 엣지 표기로 어떻게 구현하는지에 초점을 맞춘다.
+
+\subsection{텐서 차원과 인덱스 표기}
+
+텐서 차원은 항상 \emph{대괄호(brace)}로 묶어서 표기한다.
+예를 들어, 본문에서 $\mathbf{X} \in \mathbb{R}^{B \times S \times D}$라고 쓸 때,
+그냥 $B \times S \times D$라고 적는 대신, 그림에서는 엣지 옆에
+\[
+  [B, S, D], \quad [B, N_H, S, D_h], \quad [D, D_{\text{ff}}],
+\]
+와 같은 라벨을 직접 붙인다.
+이렇게 하면 각 엣지가 어떤 차원 순서를 따르는지 바로 확인할 수 있다.
+
+주요 기호는 다음과 같다.
+\begin{itemize}
+  \item $B$: 배치 크기 (batch size)
+  \item $S$: 시퀀스 길이 (sequence length)
+  \item $D$: 모델/은닉 차원 (model/hidden dimension)
+  \item $N_H$: 어텐션 헤드 수 (number of heads)
+  \item $D_h$: 헤드 차원 (head dimension), 보통 $D = N_H \cdot D_h$
+  \item $D_{\text{ff}}$: MLP/FFN 내부 피드포워드 차원
+\end{itemize}
+
+엣지 라벨은 텐서의 랭크(rank)를 직접 반영한다.
+예를 들어,
+\begin{itemize}
+  \item $[B, S, D]$: 시퀀스 배치 텐서,
+  \item $[B, N_H, S, D_h]$: 멀티헤드 어텐션에서 Q/K/V 텐서,
+  \item $[B, N_H, S, S]$: 어텐션 스코어 또는 소프트맥스 결과,
+  \item $[D, D_{\text{ff}}]$, $[D_{\text{ff}}, D]$: 선형 레이어 가중치.
+\end{itemize}
+
+순전파 다이어그램에서는 \emph{왼쪽에서 오른쪽}으로 계산이 진행되며,
+엣지 방향은 계산 그래프의 방향을 따른다.
+역전파 다이어그램에서는 기울기가 \emph{오른쪽에서 왼쪽}으로 전달되지만,
+그림 상에서는 여전히 “기울기 엣지의 방향”을 화살표로 표시하여
+순전파 엣지와 구분할 수 있게 한다.
+
+\subsection{순전파·역전파 노드의 추상적 구조}
+
+대부분의 연산자는 추상적으로 다음과 같이 쓸 수 있다.
+\[
+  \mathbf{y} = f(\mathbf{x}_1, \ldots, \mathbf{x}_k),
+\]
+여기서 $\mathbf{x}_1, \ldots, \mathbf{x}_k$는 활성값 또는 파라미터(예: 가중치, bias, 정규화 파라미터 등)를 포함한다.
+
+Section~\ref{sec:gradients-basics}에서 소개한 것처럼,
+이에 대응하는 역전파 연산자는
+\[
+  (\mathrm{d}\mathbf{x}_1, \ldots, \mathrm{d}\mathbf{x}_k)
+  = \mathrm{d}f(\mathbf{x}_1, \ldots, \mathbf{x}_k, \mathrm{d}\mathbf{y})
+\]
+의 형태를 가진다.
+즉, 순전파 입력들 $\mathbf{x}_i$와 위쪽에서 내려온 기울기 $\mathrm{d}\mathbf{y}$를 받아,
+각 입력에 대한 기울기 $\mathrm{d}\mathbf{x}_i$를 계산하는 연산자이다.
+
+이 문서의 다이어그램에서:
+\begin{itemize}
+  \item 순전파 노드는 $f$를 나타내고,
+  \item 역전파 노드는 $\mathrm{d}f$를 나타낸다.
+\end{itemize}
+노드 안에 쓰인 레이블(예: \texttt{Matmul}, \texttt{SM}, \texttt{LN}, \texttt{dMatmul}, \texttt{dSM}, \texttt{dLN})은
+해당 노드가 어떤 구체적인 연산자 $f$ 또는 $\mathrm{d}f$를 구현하는지 가리킨다.
+
+\subsection{노드 유형}
+
+다이어그램에서는 몇 가지 반복적으로 등장하는 노드 유형만 사용한다.
+각 노드는 순전파와 역전파에서 서로 짝을 이루며,
+연산자 $f$와 그에 대응하는 역전파 연산자 $\mathrm{d}f$로 해석할 수 있다.
+
+\paragraph{행렬 곱 (Matmul).}
+행렬 곱 노드는 일반적으로 원(circle) 안에 점 또는 \texttt{Matmul} 레이블로 표시한다.
+순전파에서는
+\[
+  \mathbf{Y} = \mathbf{X} W
+\]
+와 같은 연산을 나타내며, 역전파 노드(\texttt{dMatmul})는
+위쪽 기울기 $\mathrm{d}\mathbf{Y}$와 순전파 입력 $\mathbf{X}, W$를 사용하여
+$\mathrm{d}\mathbf{X}$, $\mathrm{d}W$를 계산한다.
+
+\paragraph{원소별 비선형 함수 및 기타 연산.}
+GELU, ReLU, sigmoid, softmax, 드롭아웃 등
+원소별 또는 축 단위로 작동하는 비선형 함수들은
+직사각형 또는 작은 박스 노드로 표현된다.
+이들에 대응하는 역전파 노드는 \texttt{dSM}, \texttt{dAct}와 같은 이름으로 나타나며,
+마찬가지로 순전파 입력과 위쪽 기울기를 사용해
+입력 텐서에 대한 기울기를 계산한다.
+
+\paragraph{합/잔차 연결 (Add / Residual).}
+두 텐서를 더하는 연산(예: 잔차 연결)은 플러스 기호가 있는 작은 노드로 표현된다.
+순전파에서는
+\[
+  \mathbf{Y} = \mathbf{X}_1 + \mathbf{X}_2
+\]
+와 같은 연산에 해당하며,
+역전파에서는 $\mathrm{d}\mathbf{Y}$를 두 입력에 그대로 복사하여
+$\mathrm{d}\mathbf{X}_1$, $\mathrm{d}\mathbf{X}_2$로 전달한다.
+
+\paragraph{레이어 정규화 (LayerNorm).}
+레이어 정규화는 \texttt{LN} 레이블이 있는 노드로 표현된다.
+순전파 노드는 입력 텐서를 평균과 분산으로 정규화하고,
+학습 가능한 스케일/시프트 파라미터를 적용한다.
+역전파 노드(\texttt{dLN})는 입력 텐서와 파라미터에 대한 기울기를 모두 계산한다.
+
+\paragraph{브로드캐스트 (Broadcast).}
+브로드캐스트는 $\text{BC}_{\cdot}(\cdot)$과 같은 표기로 표현한다.
+예를 들어 $\text{BC}_{B,S}(\mathbf{b})$는
+$[D]$ 형태의 bias 벡터를 $[B, S, D]$ 텐서와 더할 수 있도록
+배치 차원과 시퀀스 차원 방향으로 개념적으로 확장하는 연산을 나타낸다.
+역전파에서는 반대로 합산(summation)을 통해
+브로드캐스트 이전 차원으로 기울기를 모은다.
+
+\subsection{통신 노드 (All-Reduce, All-Gather 등)}
+
+텐서 병렬화(TP)와 데이터 병렬화(DP)를 다루기 위해,
+우리는 통신 연산을 나타내는 별도의 노드 유형을 사용한다.
+대표적인 것은 All-Reduce(\texttt{AR})와 All-Gather(\texttt{AG})이다.
+
+\begin{itemize}
+  \item \textbf{All-Reduce (\texttt{AR})}:
+        여러 디바이스에 분산된 동일 모양의 텐서를 합산(또는 평균)한 뒤,
+        그 결과를 다시 모든 디바이스에 복제하는 연산이다.
+        역전파에서는 All-Reduce의 기울기가 다시 All-Reduce로 표현될 수 있다.
+  \item \textbf{All-Gather (\texttt{AG})}:
+        여러 디바이스에 분할되어 있는 텐서를 한 디바이스 관점에서
+        더 큰 축 방향으로 이어 붙이는 연산이다.
+        역전파에서는 해당 축 방향으로 기울기를 다시 쪼개어 각 디바이스로 보내는 연산이 된다.
+\end{itemize}
+
+다이어그램에서 통신 노드는 일반적인 계산 노드와 동일한 방식으로 그려지지만,
+엣지에 붙은 차원 라벨을 통해 \emph{어떤 축이 분할 또는 결합되었는지}를 강조한다.
+예를 들어, $[B, S, D/N_T]$에서 $[B, S, D]$로 가는 All-Gather는
+“모델 차원 $D$가 $N_T$개 디바이스에 분할되어 있다”는 것을 의미한다.
+
+\subsection{MHA/MLP 상세 도식 읽는 법}
+
+이제까지 정의한 표기법을 바탕으로,
+이후 장에서 제시하는 MHA와 MLP의 대형 순전파/역전파 도식을 다음과 같이 읽을 수 있다.
+\begin{itemize}
+  \item \textbf{엣지}:
+        활성값 또는 기울기의 흐름을 나타내며,
+        $[B, S, D]$, $[B, N_H, S, D_h]$와 같은 차원 라벨이 붙는다.
+  \item \textbf{순전파 노드}:
+        \texttt{Matmul}, \texttt{SM}, \texttt{LN}, \texttt{Act} 등은
+        각각 국소 함수 $f(\mathbf{x}_1, \ldots, \mathbf{x}_k)$를 계산한다.
+  \item \textbf{역전파 노드}:
+        \texttt{dMatmul}, \texttt{dSM}, \texttt{dLN} 등은
+        대응하는 $\mathrm{d}f(\mathbf{x}_1, \ldots, \mathbf{x}_k, \mathrm{d}\mathbf{y})$를 구현하며,
+        모든 입력에 대한 기울기를 출력한다.
+  \item \textbf{브로드캐스트 표기}:
+        $\text{BC}_{B,S}(\mathbf{b})$와 같이 적힌 라벨은
+        낮은 랭크의 텐서를 더 높은 랭크 텐서와 더하기 위해
+        개념적으로 확장한 뒤 사용하는 것을 의미한다.
+  \item \textbf{통신 노드}:
+        \texttt{AR}, \texttt{AG} 노드는 디바이스 간 통신을 나타내며,
+        엣지에 붙은 차원 라벨을 통해 어떤 축이 병렬화되어 있는지 확인할 수 있다.
+\end{itemize}
+
+이러한 규칙을 사용하면, 독자는 복잡한 MHA/MLP 도식에서도
+데이터와 기울기의 흐름, 그리고 통신 패턴을 추적할 수 있다.
+필요하다면 각 노드에 대해 하부 수식을 유도할 수 있을 정도로
+충분히 정밀하지만, 동시에 전체 구조를 한눈에 파악할 수 있도록
+시각적 복잡도는 가능한 한 낮추는 것을 목표로 한다.

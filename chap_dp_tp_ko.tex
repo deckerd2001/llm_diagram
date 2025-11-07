@@ -1,0 +1,302 @@
+% ==========================================================
+% 8. 데이터 병렬화와 텐서 병렬화의 결합
+% ==========================================================
+\section{데이터 병렬화와 텐서 병렬화의 결합}
+\label{sec:dp_tp}
+
+앞 장들에서는 텐서 병렬화(TP, Section~\ref{sec:tp})와
+데이터 병렬화(DP, Section~\ref{sec:dp})를 각각 따로 살펴보았다.
+실제 대규모 학습 환경에서는 거의 항상 이 둘을 함께 사용한다.
+
+\begin{itemize}
+  \item \textbf{텐서 병렬화}는 큰 가중치 행렬과 활성값을
+        \emph{모델 샤드(model shard)} 내부의 $N_T$개 디바이스에
+        나누어 저장·계산한다.
+  \item \textbf{데이터 병렬화}는 그 모델 샤드 전체를 $N_D$개 복제하여
+        서로 다른 미니배치를 처리하고, 기울기를 동기화한다.
+\end{itemize}
+
+이 장의 목표는, 앞에서 정의한 단일 노드 및 TP/DP-only 계산 그래프 위에
+DP+TP를 어떻게 “겹쳐서” 올려놓는지 개념적으로 정리하는 것이다.
+즉, \emph{모델 차원 병렬화(TP)}와 \emph{배치 차원 병렬화(DP)}가
+어떻게 직교하는지, 그리고 어디에서 집합 통신이 발생하는지를
+시각적으로 이해할 수 있도록 하는 데 초점을 맞춘다.
+
+% ------------------------ 8.1 Parallel Groups -------------------------
+\subsection{병렬 그룹과 레이아웃}
+
+우리는 전체 디바이스들을 개념적으로 2차원 격자 위에 배치한다.
+
+\begin{itemize}
+  \item \textbf{TP 축}: 각 행(row) 안의 $N_T$개 디바이스는
+        하나의 텐서 병렬 그룹을 이루어 하나의 모델 샤드를 공동으로 저장한다.
+  \item \textbf{DP 축}: 열(column) 방향으로는, 그 TP 그룹의
+        $N_D$개 복제본이 서로 다른 배치 조각을 처리한다.
+\end{itemize}
+
+다르게 말하면 다음과 같다.
+
+- 각 TP 그룹은 Section~\ref{sec:tp}의 “TP-only” 모델처럼 동작하지만,
+  전체 배치가 아니라 \emph{로컬 배치 조각}만을 본다.
+- 각 DP “열”은 Section~\ref{sec:dp}의 “DP-only” 설정과 비슷하지만,
+  한 디바이스 대신 \emph{TP 그룹 전체}가 하나의 복제본 역할을 한다.
+
+전역 배치 크기가 $B$라면, 이를 데이터 병렬 그룹에 대해
+다음과 같이 나눈다.
+\[
+  B = N_D \cdot B_{\text{local}},
+\]
+따라서 DP 복제본 $d$는
+$\mathbf{X}_d \in \mathbb{R}^{B_{\text{local}} \times S \times D}$를
+입력으로 본다.
+각 복제본 내부에서는 $\mathbf{X}_d$가
+Section~\ref{sec:tp}에서와 동일한 TP-샤딩 모델로 들어간다:
+단일 노드의 큰 matmul들은 $N_T$ 샤드에 걸친
+컬럼/로우 병렬 쌍으로 대체된다.
+
+Figure~\ref{fig:dp_tp_overall_flow}는 이러한 레이아웃을 요약한 그림이다.
+이 그림은 단일 노드 개요(Figure~\ref{fig:single_node_overall})와
+TP 개요(Figure~\ref{fig:tp_overall_flow})를
+DP+TP 버전으로 확장한 것으로 읽으면 된다.
+
+\begin{figure}[htbp]
+  \centering
+  \input{transformer_overall_flow_DP_TP.tex}
+  \caption{데이터 병렬화와 텐서 병렬화가 결합된 전체 트랜스포머 레이어.
+  가로 방향으로는 각 텐서 병렬 그룹($N_T$ 디바이스)이
+  하나의 샤딩된 레이어(Section~\ref{sec:tp})를 함께 구현한다.
+  세로 방향으로는 그러한 그룹 $N_D$개가 데이터 병렬 격자를 이룬다.
+  각 행은 서로 다른 미니배치 조각을 처리하며,
+  기울기는 행들 사이에서 동기화된다.
+  All-Reduce와 All-Gather 집합 통신이 사용되는 위치가
+  그림에 함께 표시된다.}
+  \label{fig:dp_tp_overall_flow}
+\end{figure}
+
+% ------------------------ 8.2 From Single-Node to TP to DP+TP --------
+\subsection{단일 노드에서 텐서 병렬화, 그리고 데이터+텐서 병렬화까지}
+
+DP+TP를 이해하는 한 가지 좋은 방법은,
+Section~\ref{sec:sn}의 단일 노드 계산을 기준으로
+\emph{점진적인 수정 단계}로 보는 것이다.
+
+\paragraph{단일 노드 (Section~\ref{sec:sn}).}
+모든 파라미터와 활성값이 하나의 디바이스에 있다.
+각 선형 레이어는 하나의 matmul로 구현되며,
+집합 통신은 전혀 필요 없다.
+
+\paragraph{텐서 병렬화만 적용 (Section~\ref{sec:tp}).}
+큰 행렬을 $N_T$ 디바이스에 나눈다.
+
+\begin{itemize}
+  \item \textbf{컬럼 병렬(linear)}:
+        가중치를 출력 차원 방향으로 나눈다.
+        각 샤드는 출력의 일부 슬라이스만 계산하고,
+        이후 연산은 이 샤딩된 표현을 그대로 사용하거나,
+        All-Gather를 통해 전체 텐서를 다시 조립한다.
+  \item \textbf{로우 병렬(linear)}:
+        가중치와 입력을 입력 차원 방향으로 나눈다.
+        각 샤드는 부분 결과를 계산하고,
+        All-Reduce로 부분 출력들을 합산한다.
+\end{itemize}
+
+하나의 TP 그룹 내부에서, 모든 디바이스는 같은 배치를 보며,
+활성값은 피처 차원 방향으로 샤딩된다.
+All-Reduce와 (필요하다면) All-Gather는
+\emph{레이어 내부} 계산 그래프에 등장한다.
+
+\paragraph{데이터 병렬화만 적용 (Section~\ref{sec:dp}).}
+단일 노드 그래프는 그대로 두고, 이를 $N_D$ 디바이스에 복제한다.
+각 디바이스는 서로 다른 미니배치 조각을 처리한다.
+집합 통신은 역전파 끝에서 파라미터 기울기에 대해 수행하는
+All-Reduce 한 번뿐이다.
+
+\paragraph{데이터 병렬화와 텐서 병렬화를 결합.}
+DP+TP에서는 위 두 가지 수정을 동시에 적용한다.
+
+\begin{itemize}
+  \item 각 데이터 병렬 복제본은 $N_T$ 디바이스로 구성된
+        하나의 TP 그룹이다. 이 그룹 내부에서는
+        Section~\ref{sec:tp}의 모든 TP 샤딩과 집합 통신이 그대로 적용된다.
+  \item 데이터 병렬 복제본들 사이에서는
+        Section~\ref{sec:dp}에서와 같이 기울기 All-Reduce를 수행하되,
+        이제는 각 가중치 행렬의 \emph{TP 샤드}를 단위로 한다.
+\end{itemize}
+
+즉, 각 MHA/MLP/출력 블록의 \emph{샤드 단위} 내부 구조는
+단일 TP-only 설정 때와 동일하고,
+변하는 것은 “각 텐서에 몇 개의 디바이스가 관여하는지”와
+“어떤 집합 통신이 어떤 디바이스를 잇는지”뿐이다.
+
+% ------------------------ 8.3 Forward Pass under DP+TP ---------------
+\subsection{데이터+텐서 병렬 환경에서의 순전파}
+
+DP+TP 환경에서 한 TP 샤드가 보는 관점에서,
+순전파는 기본적으로 TP-only 모델
+(Section~\ref{sec:tp})과 같다.
+
+\begin{itemize}
+  \item 입력은 로컬 미니배치 조각
+        $\mathbf{X}_d \in \mathbb{R}^{B_{\text{local}} \times S \times D}$이다.
+  \item 컬럼 병렬 및 로우 병렬 선형 레이어가
+        TP-only에서와 동일한 방식으로 적용된다.
+  \item 중간 활성값(예: 헤드별 Q/K/V, MLP 중간 피처)은
+        $N_T$ 디바이스에 샤딩된다.
+\end{itemize}
+
+여기에 \emph{추가}되는 것은, 어떤 이후 연산이
+“샤딩되지 않은 전체 텐서”를 필요로 할 때
+\textbf{활성값에 대한 All-Gather}를 사용하는 것이다.
+
+대표적인 예시는 다음과 같다.
+
+\begin{itemize}
+  \item \textbf{어휘 병렬 출력 프로젝션.}
+        최종 LM head 가중치 $\mathbf{W}_{\text{lm}}$이
+        어휘 차원 방향으로 TP 디바이스에 샤딩되어 있다면,
+        각 샤드는 어휘의 일부분에 대한 logits만 생성한다.
+        전체 어휘에 대한 softmax/손실을 계산하려면,
+        모든 샤드에서 나온 logits를 All-Gather로 모아
+        크기가 $[B_{\text{local}}, S, V]$인 전체 텐서를
+        구성해야 한다.
+  \item \textbf{샤딩된 임베딩.}
+        토큰 임베딩 행렬이 어휘 차원 방향으로 샤딩되어 있다면,
+        임베딩 lookup 결과 역시 샤딩된 형태로 나온다.
+        이후 레이어가 샤딩되지 않은
+        $[B_{\text{local}}, S, D]$ 표현을 기대한다면,
+        그 전에 All-Gather를 통해 임베딩을 합쳐줘야 한다.
+  \item \textbf{샤딩되지 않은 연산들.}
+        은닉 전체 차원에 작용하는 연산
+        (예: 전역 정규화, 샤딩되지 않은 잔차 브랜치 등)은
+        원칙적으로 전체 텐서를 필요로 하므로,
+        그 전에 샤딩된 활성값을 All-Gather해야 할 수 있다.
+        물론 모델을 설계할 때, 이러한 연산들이
+        샤드 로컬로 동작하거나 TP 친화적인 변형으로 대체되도록
+        구조를 잡으면, All-Gather를 줄일 수 있다.
+\end{itemize}
+
+정리하면, DP+TP 순전파에서 TP 그룹 내부의 All-Reduce/All-Gather 위치와
+텐서 모양은 TP-only와 거의 같고,
+데이터 병렬은 “어떤 미니배치 조각을 보느냐”만 바꾼다.
+All-Gather 위치는 “샤딩된 텐서를 전역적으로 봐야 하는 연산”에 의해
+결정된다.
+
+% ------------------------ 8.4 Backward Pass and Gradient Sync --------
+\subsection{데이터+텐서 병렬 환경에서의 역전파와 기울기 동기화}
+
+DP+TP 환경에서 역전파는 다음 두 가지 요소를 결합한 것이다.
+
+\begin{itemize}
+  \item Section~\ref{sec:tp}에서의 TP-only 역전파 그래프
+        (레이어 내부의 활성값/부분 기울기에 대한 All-Reduce와 All-Gather).
+  \item Section~\ref{sec:dp}에서의 DP-only 기울기 동기화
+        (이제는 각 TP 샤드 파라미터에 대해 적용).
+\end{itemize}
+
+특정 파라미터 텐서 $W$에 대해 보다 구체적으로 보면 다음과 같다.
+
+\begin{itemize}
+  \item \textbf{TP-only에서:}
+    \begin{itemize}
+      \item $W$는 TP 그룹 내부의 $N_T$ 디바이스에 대해
+            $W^{(t)}$ 형태의 샤드로 나뉘어 저장된다
+            ($t = 0,\dots,N_T-1$).
+      \item 로컬 matmul 역전파를 통해 각 샤드에서
+            로컬 기울기 $\nabla W^{(t)}$가 계산된다.
+      \item $W$가 로우 병렬 구성에 등장한다면,
+            입력에 대한 부분 기울기는 $t$에 대한 All-Reduce로 합쳐진다.
+    \end{itemize}
+  \item \textbf{DP+TP에서:}
+    \begin{itemize}
+      \item 위의 TP-only 로직이 각 데이터 병렬 복제본 $d$에 대해
+            독립적으로 적용되어, 복제본 $d$의 샤드 $t$에 대해
+            $\nabla W^{(t,d)}$를 얻는다.
+      \item 그 다음, 각 샤드 $t$에 대해 복제본 인덱스 $d$에 대한
+            All-Reduce를 수행한다:
+            \[
+              \nabla W^{(t)}
+                = \frac{1}{N_D}
+                  \sum_{d=0}^{N_D-1} \nabla W^{(t,d)}.
+            \]
+            이는 데이터 병렬 기울기 동기화이지만,
+            이제 모든 TP 샤드에 대해 \emph{병렬로} 수행된다고 볼 수 있다.
+    \end{itemize}
+\end{itemize}
+
+따라서 각 파라미터 샤드 $W^{(t)}$는 두 종류의 집합 통신에 참여한다.
+
+\begin{itemize}
+  \item \textbf{TP 그룹 내부 통신}:
+        $t$에 대한 All-Reduce/All-Gather
+        (로우/컬럼 병렬 로직에 따라).
+  \item \textbf{DP 복제본 간 통신}:
+        각 샤드 인덱스 $t$에 대해 $d$에 대한 All-Reduce
+        (데이터 병렬 기울기 동기화).
+\end{itemize}
+
+이 조합 덕분에, 역전파가 끝났을 때
+모든 DP 복제본의 모든 TP 그룹이
+자신의 로컬 샤드 $W^{(t)}$에 대해
+동일하고 올바르게 합산된 기울기를 가지게 되며,
+전체 시스템에서 옵티마이저 업데이트가 일관되게 수행된다.
+
+% ------------------------ 8.5 Communication Summary ------------------
+\subsection{통신 요약 및 TP/DP 단독 설정과의 비교}
+
+마지막으로, TP-only (Section~\ref{sec:tp}) 및 DP-only
+(Section~\ref{sec:dp})와 비교했을 때
+DP+TP의 주요 차이를 정리해 보자.
+
+\paragraph{TP-only와 비교.}
+
+\begin{itemize}
+  \item \textbf{레이어별 샤딩 패턴은 동일.}
+        하나의 TP 그룹 내부에서, 순전파/역전파 그래프 구조,
+        All-Reduce/All-Gather의 위치, 텐서 모양은
+        TP-only 설정과 완전히 동일하다.
+  \item \textbf{DP 복제본 방향의 기울기 All-Reduce 추가.}
+        각 파라미터 샤드는 이제 DP 축에 대해
+        한 번 더 All-Reduce에 참여하여,
+        서로 다른 미니배치 조각에서 온 기울기를 평균낸다.
+  \item \textbf{로컬 활성값은 변하지 않음.}
+        TP 그룹 내부의 활성 메모리 사용량과 계산 패턴은
+        DP를 추가하더라도 변하지 않는다.
+        DP는 각 복제본이 어떤 샘플을 보는지와,
+        파라미터 기울기를 어떻게 합치는지만 바꾼다.
+\end{itemize}
+
+\paragraph{DP-only와 비교.}
+
+\begin{itemize}
+  \item \textbf{각 복제본 안의 샤딩된 모델.}
+        DP-only에서는 각 복제본이 모델 전체를 그대로 가지고 있지만,
+        DP+TP에서는 각 복제본이 TP-샤딩된 모델을 가진다.
+        즉, 파라미터와 일부 활성값이 $N_T$ 디바이스에 나누어져 있다.
+  \item \textbf{더 빈번한 집합 통신.}
+        DP-only에서는 각 파라미터 텐서에 대해
+        스텝당 한 번의 All-Reduce만 수행한다.
+        반면 DP+TP에서는 여기에 더해,
+        대부분의 레이어(MHA, MLP, 임베딩, LM head 등) 내부에
+        TP 그룹 내부용 All-Reduce/All-Gather가 추가된다.
+  \item \textbf{디바이스당 메모리·연산량.}
+        TP는 디바이스당 파라미터·활성 메모리를
+        대략 $1/N_T$만큼 줄여 주지만,
+        그 대가로 레이어 내부 통신이 늘어난다.
+        DP는 배치를 나누어 디바이스당 활성 메모리를
+        추가로 $1/N_D$ 정도 줄여 준다.
+\end{itemize}
+
+전체적으로 DP+TP는 다음과 같이 이해할 수 있다.
+
+\begin{quote}
+  “Section~\ref{sec:tp}의 TP-샤딩된 트랜스포머 레이어를 가져와,
+  Section~\ref{sec:dp}에서처럼 서로 다른 미니배치 조각에 대해 실행한 뒤,
+  각 파라미터 샤드마다 복제본 간 기울기를 평균내기 위한
+  All-Reduce를 하나 더 추가한다.”
+\end{quote}
+
+TP로 인해 샤딩된 활성값이 전역적으로 보여야 하는 곳
+(예: 전체 어휘에 대한 logits)에서는 All-Gather가 사용되고,
+뿐만 아니라 TP의 부분 결과를 합치거나
+데이터 병렬 복제본 사이에서 기울기를 집계할 때는
+All-Reduce가 사용된다.
